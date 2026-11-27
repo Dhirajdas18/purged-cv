@@ -9,7 +9,9 @@ def test_page_builds_from_committed_data():
     d["leak"] = json.loads(Path("docs/data/leak.json").read_text())
     d["feat"] = json.loads(Path("docs/data/features.json").read_text())
     d["check"] = json.loads(Path("docs/data/check.json").read_text())
+    d["sizing"] = json.loads(Path("docs/data/sizing.json").read_text())
     html = build_html(d)
+    assert "$sizing" not in html
     assert "$check" not in html and len(d["check"]["real"]) == 48
     assert "$feat" not in html and len(d["feat"]) == 8
     assert "$leak" not in html and len({r["method"] for r in d["leak"]}) == 6

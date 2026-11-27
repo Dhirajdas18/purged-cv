@@ -478,7 +478,7 @@ def check_chart(rows, cv, real, out_dir: Path) -> None:
 def _grid(h: int):
     """(kind, label, splitter args) per plan-topic5, duplicates dropped."""
     kf = list(dict.fromkeys([(0, 0), (-(-h // 2), 0), (h, 0), (h, 6), (h, h), (h, 2 * h)]))
-    wf = list(dict.fromkeys([0, h, h + 6, 2 * h, 3 * h]))
+    wf = sorted(set([0, h, h + 6, 2 * h, 3 * h]))  # smallest first: the rule takes the first pass
     return kf, wf
 
 
@@ -535,6 +535,13 @@ def report_sizing(out_dir: Path) -> dict:
                      else f"gap {r['setting']} ") + f"{r['ic']:+.4f} (t {r['t']:+.1f})"
                     for r in rows if r["h"] == h and r["model"] == mname and r["kind"] == kind)
                 res[f"h = {h}, {mname}, {kind}"] = f"{parts}; needed: {lab}"
+    for h in HORIZONS:
+        for mname in ("ridge", "lightgbm"):
+            w = {r["setting"]: r["ic"] for r in rows
+                 if r["h"] == h and r["model"] == mname and r["kind"] == "walk-forward"}
+            res[f"walk-forward, h = {h}, {mname}: no gap minus gap h"] = (
+                f"{w[0] - w[h]:+.4f}; gap h to the widest {min(w[g] for g in w if g >= h):+.4f} .. "
+                f"{max(w[g] for g in w if g >= h):+.4f}")
     qok = all(r["t"] < 2 for r in rows
               if r["kind"] == "walk-forward" and r["setting"] == r["h"] + 6)
     res["the reference model's gap (h + 6 days before the test block)"] = (

@@ -123,3 +123,22 @@ each method's favourite model per label length.</p>
   document.getElementById("c-note").textContent = `Real mean IC over the 48 models: ${f4(m)}; best possible picks: ${f4(C.best)}.`;
 })();
 </script>
+<h3 id="sizing">How big the gap needs to be</h3>
+<p class="note">Walk-forward on data to Dec 2022, retraining every 6 months, with the gap between the last training
+day and the test block varied. “No gap minus gap h” is what training right up to the test adds to the score: the
+leak. The reference model leaves h + 6 days.</p>
+<div class="table-scroll"><table class="data" id="s-table">
+  <thead><tr><th scope="col">Label length</th><th scope="col">Model</th><th scope="col">IC, no gap</th><th scope="col">IC, gap h</th><th scope="col">IC, the reference model's gap</th><th scope="col">No gap minus gap h</th></tr></thead>
+  <tbody></tbody>
+</table></div>
+<script>
+(() => {
+  const S = $sizing, f4 = (v) => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(4);
+  const w = S.filter((r) => r.kind === "walk-forward");
+  const keys = [...new Set(w.map((r) => `${r.h}|${r.model}`))];
+  document.querySelector("#s-table tbody").innerHTML = keys.map((k) => {
+    const [h, m] = k.split("|"), g = (s) => w.find((r) => r.h === +h && r.model === m && r.setting === s).ic;
+    return `<tr><th scope="row">${h} day${+h > 1 ? "s" : ""}</th><td>${m}</td><td>${f4(g(0))}</td><td>${f4(g(+h))}</td><td>${f4(g(+h + 6))}</td><td>${f4(g(0) - g(+h))}</td></tr>`;
+  }).join("");
+})();
+</script>

@@ -17,7 +17,7 @@ method, a label length and an embargo, and see which trading days each split tra
 - [x] The leak on synthetic stock panels with a known true edge, including harder cases
 - [x] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
 - [x] Which cross-validation score predicts the score a model really gets later
-- [ ] How big the purge and embargo need to be, by label length
+- [x] How big the purge and embargo need to be, by label length
 - [ ] Combinatorial purged CV: a spread of out-of-sample results instead of one number
 - [x] One check on Jan 2023 – Nov 2025, after every rule is fixed on earlier data
 
@@ -117,11 +117,37 @@ data, so the t values are rough.
   possible was +0.0333. Purged 5-fold also ranked the models most like reality (0.64; 0.66 with the
   embargo).
 
+### 5. The reference model's gap is enough: training up to the test added up to 0.025 IC, wider gaps added nothing
+
+<a href="docs/img/sizing.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/sizing.png"><img src="docs/img/sizing.gif" alt="Walk-forward IC against the gap before the test block, for 1-, 5-, 21- and 63-day labels, ridge and LightGBM" width="720"></picture></a>
+
+On data to Dec 2022 only (the 2023 – 2025 results of finding 4 were not used), ridge and LightGBM on all ten
+features were scored by reference-style walk-forward with the gap before each test block set to 0, h,
+h + 6 (the reference model's), 2h and 3h days, and by purged 5-fold with purges of 0, h/2 and h days and embargoes
+of 0, 6, h and 2h. The decision rule was written down before the run (`plan-topic5`): the needed size is
+the smallest setting whose daily IC is not detectably above the widest setting's (paired t below 2, with
+the reference model's √(days / h) correction for overlapping labels).
+
+- **Training right up to the test inflated the score, most for long labels and trees.** Walk-forward IC
+  with no gap minus IC with a gap of h: LightGBM +0.0250 (63-day labels), +0.0098 (21-day), +0.0025
+  (5-day), +0.0013 (1-day); ridge +0.0066, +0.0013, +0.0003, +0.0001.
+- **Beyond a gap of h, nothing changed.** From h up to 3h, walk-forward IC stayed between +0.0399 and
+  +0.0420 for 63-day LightGBM and between +0.0282 and +0.0307 for 21-day LightGBM.
+- **The reference model's h + 6 sits on that flat part,** so it removes the overlap and costs at most 6 extra days.
+  It is enough; an exact gap of h would do as well.
+- **The fixed rule could not prove any of it.** No gap was detectably above the widest one (largest t
+  1.6 for 63-day LightGBM), so by the rule a gap of 0 was "enough" for every walk-forward case. Eight
+  years of noisy daily IC cannot confirm a leak of this size; the 48-model check in finding 4, which
+  compared methods across many models, could (purge t +4.57).
+- **The k-fold reference was a poor choice.** A 2h embargo throws away so much training data (126 days on
+  each side for 63-day labels) that it scored lowest for that reason alone (ridge +0.0355 against
+  +0.0480 with the purge only), so k-fold sizes from this rule mean little.
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check, sizing
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```
