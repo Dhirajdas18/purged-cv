@@ -1,0 +1,14 @@
+import json
+from pathlib import Path
+
+from pcv.site import build_html
+
+
+def test_page_builds_from_committed_data():
+    d = json.loads(Path("docs/data/splits.json").read_text())
+    html = build_html(d)
+    assert "Split lab" in html and "$data" not in html
+    assert set(d["layouts"]["21/5"]) == {"plain", "purged", "walk-forward", "combinatorial"}
+    for segs in d["layouts"]["63/0"]["purged"]:  # every split covers every day once
+        assert segs[0][0] == 0 and segs[-1][1] == d["n"] - 1
+        assert all(a[1] + 1 == b[0] for a, b in zip(segs, segs[1:], strict=False))

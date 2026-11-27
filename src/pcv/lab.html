@@ -1,0 +1,48 @@
+<div class="calc">
+  <div class="calc-controls">
+    <label>Method <select id="p-m"><option value="plain">plain k-fold</option><option value="purged" selected>purged k-fold</option><option value="walk-forward">walk-forward</option><option value="combinatorial">combinatorial purged</option></select></label>
+    <label>Label length <select id="p-h"><option value="1">1 day</option><option value="5">5 days</option><option value="21">21 days</option><option value="63" selected>63 days</option></select></label>
+    <label>Embargo <select id="p-e"><option value="0">none</option><option value="5" selected>5 days</option></select></label>
+  </div>
+</div>
+<p class="note" id="p-status" aria-live="polite"></p>
+<div id="p-legend" class="legend-row" aria-hidden="true"></div>
+<div id="p-chart" role="img" aria-label="Which trading days each split uses for training and testing"></div>
+<p class="note">How to read it: each row is one split, laid along the trading calendar. Plain k-fold
+ignores the label length, so its training days run right up to the test block. Purged splits leave a
+gap of label-length days on each side; walk-forward never trains on the future.</p>
+<script>
+(() => {
+  const D = $data, el = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const NAMES = ["not used", "train", "purged", "embargo", "test"];
+  const COL = () => [css("--grid"), css("--accent"), css("--accent-2"), css("--violet"), css("--text")];
+  const h = new URLSearchParams(location.hash.slice(1));
+  for (const [k, id] of [["m", "p-m"], ["h", "p-h"], ["e", "p-e"]])
+    if (h.get(k) && [...el(id).options].some((o) => o.value === h.get(k))) el(id).value = h.get(k);
+  function draw() {
+    const m = el("p-m").value, hh = el("p-h").value, e = el("p-e").value;
+    history.replaceState(null, "", `#m=${m}&h=${hh}&e=${e}`);
+    const L = D.layouts[`${hh}/${e}`][m], col = COL();
+    const W = el("p-chart").clientWidth || 700, lab = 64, rowH = 22, gap = 6, top = 4;
+    const x = (d) => lab + (d / D.n) * (W - lab - 8);
+    let svg = `<svg width="${W}" height="${top + L.length * (rowH + gap) + 24}" xmlns="http://www.w3.org/2000/svg">`;
+    L.forEach((segs, k) => {
+      const y = top + k * (rowH + gap);
+      svg += `<text x="0" y="${y + rowH * 0.7}" fill="${css("--text-2")}" font-size="12">split ${k + 1}</text>`;
+      for (const [a, b, s] of segs)
+        svg += `<rect x="${x(a)}" y="${y}" width="${Math.max(x(b + 1) - x(a), 0.6)}" height="${rowH}" fill="${col[s]}"><title>${NAMES[s]}</title></rect>`;
+    });
+    const yb = top + L.length * (rowH + gap) + 14;
+    for (const [i, t] of D.ticks) svg += `<text x="${x(i)}" y="${yb}" fill="${css("--text-2")}" font-size="11" text-anchor="middle">${t}</text>`;
+    el("p-chart").innerHTML = svg + "</svg>";
+    el("p-legend").innerHTML = NAMES.map((n, i) => `<span><i style="background:${col[i]}"></i>${n}</span>`).join("");
+    let tr = 0, all = 0;
+    for (const segs of L) for (const [a, b, s] of segs) { all += b - a + 1; if (s === 1) tr += b - a + 1; }
+    el("p-status").textContent = `${L.length} splits on ${D.n} trading days (${D.first.slice(0, 4)}–${D.last.slice(0, 4)}). On average each split trains on ${Math.round(100 * tr / all)}% of the days.`;
+  }
+  for (const id of ["p-m", "p-h", "p-e"]) el(id).addEventListener("change", draw);
+  addEventListener("resize", draw);
+  draw();
+})();
+</script>
