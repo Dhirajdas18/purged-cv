@@ -28,7 +28,9 @@ def lab_section(d: dict) -> str:
     lab = lab.replace("$check", json.dumps({k: chk[k] for k in ("rows", "real", "best")},
                                            separators=(",", ":")))
     lab = lab.replace("$sizing", json.dumps(d.get("sizing", []), separators=(",", ":")))
-    rest = {k: v for k, v in d.items() if k not in ("leak", "feat", "check", "sizing")}
+    lab = lab.replace("$paths", json.dumps({"picks": d.get("paths", {}).get("picks", [])},
+                                           separators=(",", ":")))
+    rest = {k: v for k, v in d.items() if k not in ("leak", "feat", "check", "sizing", "paths")}
     return lab.replace("$data", json.dumps(rest, separators=(",", ":")))
 
 

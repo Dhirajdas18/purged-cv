@@ -10,7 +10,9 @@ def test_page_builds_from_committed_data():
     d["feat"] = json.loads(Path("docs/data/features.json").read_text())
     d["check"] = json.loads(Path("docs/data/check.json").read_text())
     d["sizing"] = json.loads(Path("docs/data/sizing.json").read_text())
+    d["paths"] = json.loads(Path("docs/data/paths.json").read_text())
     html = build_html(d)
+    assert "$paths" not in html and len(d["paths"]["picks"]) == 4
     assert "$sizing" not in html
     assert "$check" not in html and len(d["check"]["real"]) == 48
     assert "$feat" not in html and len(d["feat"]) == 8

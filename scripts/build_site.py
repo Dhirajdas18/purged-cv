@@ -12,6 +12,7 @@ def main() -> None:
     d["feat"] = json.loads(Path("docs/data/features.json").read_text())
     d["check"] = json.loads(Path("docs/data/check.json").read_text())
     d["sizing"] = json.loads(Path("docs/data/sizing.json").read_text())
+    d["paths"] = json.loads(Path("docs/data/paths.json").read_text())
     out = Path("site/index.html")
     out.parent.mkdir(exist_ok=True)
     out.write_text(build_html(d), encoding="utf-8")

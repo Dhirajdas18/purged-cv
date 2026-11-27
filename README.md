@@ -18,7 +18,7 @@ method, a label length and an embargo, and see which trading days each split tra
 - [x] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
 - [x] Which cross-validation score predicts the score a model really gets later
 - [x] How big the purge and embargo need to be, by label length
-- [ ] Combinatorial purged CV: a spread of out-of-sample results instead of one number
+- [x] Combinatorial purged CV: a spread of out-of-sample results instead of one number
 - [x] One check on Jan 2023 – Nov 2025, after every rule is fixed on earlier data
 
 ## Findings
@@ -143,11 +143,37 @@ the reference model's √(days / h) correction for overlapping labels).
   each side for 63-day labels) that it scored lowest for that reason alone (ridge +0.0355 against
   +0.0480 with the purge only), so k-fold sizes from this rule mean little.
 
+### 6. Seven paths agreed with each other, not with the next three years
+
+<a href="docs/img/paths.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/paths.png"><img src="docs/img/paths.gif" alt="Range of seven combinatorial purged CV path scores for 48 models against each model's real later score" width="720"></picture></a>
+
+Combinatorial purged CV on data to Dec 2022: the days are cut into 8 groups, every choice of 2 is a test
+set (28 splits, purged and embargoed by h days), and the test pieces join into 7 complete backtest
+paths, each scored on 2016 – 2022. The 48 models of finding 4, checked against the real Jan 2023 – Nov
+2025 scores saved there (a second look at that window; nothing here was tuned on it). The measures were
+written down before the run (`plan-topic6`). For each label length, the best model's forecast takes a
+haircut for picking the best of 12: the expected best of 12 normal draws × the path standard error ×
+√(1 − the models' average path correlation).
+
+- **The paths barely disagree.** The median standard deviation across a model's 7 paths was 0.0022 IC;
+  they score the same days with heavily shared training data.
+- **So their spread is no forecast range.** The real score fell inside the model's path range for 3 of
+  48 models, and inside path mean ± 2 standard deviations for 3; on average the real score was 0.0163
+  below the path mean.
+- **But a wider spread did warn of a bigger miss.** Across the 48 models, path standard deviation and
+  the size of the miss had a rank correlation of 0.77.
+- **The haircut for picking was too small to matter.** It ranged from 0.0002 (1-day labels) to 0.0032
+  (63-day). Over the four picks, the average miss was 0.0238 without it, 0.0228 with it and 0.0213 for
+  walk-forward.
+- **The long-label picks collapsed.** The best 21-day model (ridge, all features) made +0.0085 for real
+  against a forecast of +0.0463; the best 63-day model (LightGBM, 7 leaves) made +0.0054 against
+  +0.0471. The 1-day pick held up (+0.0605 against +0.0587).
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check, sizing
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check, sizing, paths
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```
