@@ -451,15 +451,15 @@ def check_chart(rows, cv, real, out_dir: Path) -> None:
     ax = axes[0]
     names = list(cv)
     rr = [real[n] for n in names]
-    for m, col in (("shuffled k-fold", plots.MUTED), ("walk-forward", plots.SERIES[2]),
-                   ("purged", plots.SERIES[0])):
+    shown = (("walk-forward", plots.SERIES[2]), ("purged", plots.SERIES[0]))
+    for m, col in shown:  # shuffled k-fold sits far right (up to 0.31); its miss is on the right
         ax.scatter([cv[n][m] for n in names], rr, s=22, color=col, label=m, alpha=0.85)
-    lo = min(min(rr), min(cv[n][m] for n in names for m in cv[n])) - 0.005
-    hi = max(max(rr), max(cv[n][m] for n in names for m in cv[n])) + 0.005
+    vals = rr + [cv[n][m] for n in names for m, _ in shown]
+    lo, hi = min(vals) - 0.005, max(vals) + 0.005
     ax.plot([lo, hi], [lo, hi], color=plots.TEXT_2, lw=1, ls="--")
     ax.set_xlabel("cross-validation IC, 2016-2022")
     ax.set_ylabel("real IC, Jan 2023 - Nov 2025")
-    ax.set_title("48 models: CV score against the real later score", loc="left")
+    ax.set_title("48 models: CV score vs real later score", loc="left")
     ax.legend(frameon=False, loc="upper left")
     ax = axes[1]
     y = np.arange(len(rows))

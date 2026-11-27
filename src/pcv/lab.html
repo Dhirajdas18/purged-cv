@@ -104,3 +104,22 @@ Which of the two predicts the real later score is the next test.</p>
   }).join("");
 })();
 </script>
+<h3 id="check">Which score predicted the real one</h3>
+<p class="note">48 model variants (4 label lengths × 3 feature sets × ridge and LightGBM, two settings each),
+fixed in advance. Each method scored them on data to Dec 2022; then each model, trained on everything to Dec 2022,
+was scored once on Jan 2023 – Nov 2025. “Miss” is the average distance between the two; “picked” is the real IC of
+each method's favourite model per label length.</p>
+<div class="table-scroll"><table class="data" id="c-table">
+  <thead><tr><th scope="col">Method</th><th scope="col">Mean CV IC</th><th scope="col">Mean miss</th><th scope="col">Rank agreement</th><th scope="col">Real IC of its picks</th></tr></thead>
+  <tbody></tbody>
+</table></div>
+<p class="note" id="c-note"></p>
+<script>
+(() => {
+  const C = $check, f4 = (v) => (v < 0 ? "−" : "") + Math.abs(v).toFixed(4);
+  document.querySelector("#c-table tbody").innerHTML = C.rows.map((r) =>
+    `<tr><th scope="row">${r.method}</th><td>${f4(r.cv_mean)}</td><td>${f4(r.abs_gap)}</td><td>${r.rho.toFixed(2)}</td><td>${f4(r.picked_real)}</td></tr>`).join("");
+  const real = Object.values(C.real), m = real.reduce((a, b) => a + b, 0) / real.length;
+  document.getElementById("c-note").textContent = `Real mean IC over the 48 models: ${f4(m)}; best possible picks: ${f4(C.best)}.`;
+})();
+</script>

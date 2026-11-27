@@ -24,7 +24,10 @@ REPO = "https://github.com/Dhirajdas18/purged-cv"
 def lab_section(d: dict) -> str:
     lab = LAB.replace("$leak", json.dumps(d.get("leak", []), separators=(",", ":")))
     lab = lab.replace("$feat", json.dumps(d.get("feat", []), separators=(",", ":")))
-    rest = {k: v for k, v in d.items() if k not in ("leak", "feat")}
+    chk = d.get("check", {"rows": [], "real": {}, "best": 0})
+    lab = lab.replace("$check", json.dumps({k: chk[k] for k in ("rows", "real", "best")},
+                                           separators=(",", ":")))
+    rest = {k: v for k, v in d.items() if k not in ("leak", "feat", "check")}
     return lab.replace("$data", json.dumps(rest, separators=(",", ":")))
 
 

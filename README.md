@@ -16,10 +16,10 @@ method, a label length and an embargo, and see which trading days each split tra
 - [x] Splitters: purged k-fold, embargo, walk-forward with a purge, combinatorial purged CV with backtest paths
 - [x] The leak on synthetic stock panels with a known true edge, including harder cases
 - [x] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
-- [ ] Which cross-validation score predicts the score a model really gets later
+- [x] Which cross-validation score predicts the score a model really gets later
 - [ ] How big the purge and embargo need to be, by label length
 - [ ] Combinatorial purged CV: a spread of out-of-sample results instead of one number
-- [ ] One check on Jan 2023 – Nov 2025, after every rule is fixed on earlier data
+- [x] One check on Jan 2023 – Nov 2025, after every rule is fixed on earlier data
 
 ## Findings
 
@@ -91,11 +91,37 @@ reference-style walk-forward (retrained every 6 months, training ending h + 6 da
 - **Which score to believe is still open.** The synthetic panels (finding 2) had walk-forward slightly
   below the truth; the next finding checks both against what the models really scored later.
 
+### 4. Every honest method overstated the next three years; walk-forward missed least, purging picked best
+
+<a href="docs/img/check.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/check.png"><img src="docs/img/check.gif" alt="Cross-validation IC against real later IC for 48 models under purged and walk-forward splits, and the average miss of six methods" width="720"></picture></a>
+
+48 model variants were fixed in advance (`plan-topic4`, committed before any later data was scored): label
+length 1, 5, 21 or 63 days × all ten features, the five trend features or the five risk features × ridge
+(alpha 1 or 100) or LightGBM (7 or 31 leaves). Each method scored every variant on data up to Dec 2022
+(days from 2016, the same for all). Then each variant, trained on every row whose label ended by Dec 2022,
+was scored once on Jan 2023 – Nov 2025; those real scores are saved in `runs/check.json` and never
+recomputed. Comparisons between methods are paired over the 48 variants, which share label lengths and
+data, so the t values are rough.
+
+- **The next three years were weaker than any honest method expected.** The 48 models made a real IC of
+  +0.020 on average; purged 5-fold had scored them at +0.037, walk-forward +0.034, combinatorial purged
+  +0.036. Every honest method overstated the future by 0.014–0.017.
+- **Shuffled k-fold was useless.** It scored the models at +0.081 on average, missed by 0.062, and ranked
+  them the wrong way round (rank correlation with the real scores −0.15).
+- **On real data the purge mattered, and so did the embargo.** Plain 5-fold over day blocks missed by
+  0.0202, purged 5-fold by 0.0185 (t +4.57 for the difference), purged with an h-day embargo by 0.0180
+  (t −2.37 against purged alone).
+- **Walk-forward missed least (0.0161, t −3.95 against purged), but purged k-fold picked better.** Taking
+  each method's favourite model per label length, purged 5-fold (with or without the embargo) chose models
+  that really made +0.0313, against +0.0275 for walk-forward and +0.0270 for combinatorial purged; the best
+  possible was +0.0333. Purged 5-fold also ranked the models most like reality (0.64; 0.66 with the
+  embargo).
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```
