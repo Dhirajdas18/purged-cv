@@ -475,5 +475,98 @@ def check_chart(rows, cv, real, out_dir: Path) -> None:
     plots.save(fig, out_dir, "check")
 
 
+def _grid(h: int):
+    """(kind, label, splitter args) per plan-topic5, duplicates dropped."""
+    kf = list(dict.fromkeys([(0, 0), (-(-h // 2), 0), (h, 0), (h, 6), (h, h), (h, 2 * h)]))
+    wf = list(dict.fromkeys([0, h, h + 6, 2 * h, 3 * h]))
+    return kf, wf
+
+
+def report_sizing(out_dir: Path) -> dict:
+    """How big the purge, embargo and walk-forward gap need to be, by label length, on data to
+    Dec 2022 only (rule fixed in plan-topic5)."""
+    import pandas as pd
+
+    from pcv.data import PICK_END, calendar
+    from pcv.evaluate import cv_daily
+    from pcv.features import FEAT_A, HORIZONS
+    from pcv.split import BlockWalkForward, PurgedKFold
+
+    f = lake_table()
+    cal = calendar()
+    starts = [int(np.searchsorted(cal, pd.Timestamp(d)))
+              for d in pd.date_range("2016-01-01", PICK_END, freq="6MS")]
+    cache = Path("out/sizing.json")
+    done = json.loads(cache.read_text()) if cache.exists() else {}
+    rows, res = [], {}
+    for h in HORIZONS:
+        kf, wf = _grid(h)
+        for mname in ("ridge", "lightgbm"):
+            prm = 1.0 if mname == "ridge" else 31
+            v = {"h": h, "features": FEAT_A, "model": mname, "param": prm}
+            p = _variant_panel(f, v, cal, hi=PICK_END)
+            mk = make_variant(v)
+            series = {}
+            for kind, settings in (("k-fold", kf), ("walk-forward", wf)):
+                for st in settings:
+                    key = f"{h}|{mname}|{kind}|{st}"
+                    if key not in done:
+                        sp = (PurgedKFold(5, st[0], st[1]) if kind == "k-fold"
+                              else BlockWalkForward(starts, 0, st))
+                        done[key] = cv_daily(mk, p, sp, from_day=starts[0]).to_dict()
+                        cache.write_text(json.dumps(done))
+                    series[(kind, st)] = pd.Series(done[key]).rename(int)
+            for kind, settings in (("k-fold", kf), ("walk-forward", wf)):
+                ref = series[(kind, settings[-1])]
+                needed = None
+                for st in settings:
+                    d = (series[(kind, st)] - ref).dropna()
+                    t = d.mean() / d.std(ddof=1) * np.sqrt(len(d) / h) if d.std() > 0 else 0.0
+                    rows.append({"h": h, "model": mname, "kind": kind,
+                                 "setting": list(st) if kind == "k-fold" else st,
+                                 "ic": float(series[(kind, st)].mean()), "diff": float(d.mean()),
+                                 "t": float(t)})
+                    if needed is None and t < 2:
+                        needed = st
+                lab = (f"purge {needed[0]}, embargo {needed[1]}" if kind == "k-fold"
+                       else f"gap {needed} days")
+                parts = "; ".join(
+                    (f"({r['setting'][0]},{r['setting'][1]}) " if kind == "k-fold"
+                     else f"gap {r['setting']} ") + f"{r['ic']:+.4f} (t {r['t']:+.1f})"
+                    for r in rows if r["h"] == h and r["model"] == mname and r["kind"] == kind)
+                res[f"h = {h}, {mname}, {kind}"] = f"{parts}; needed: {lab}"
+    qok = all(r["t"] < 2 for r in rows
+              if r["kind"] == "walk-forward" and r["setting"] == r["h"] + 6)
+    res["the reference model's gap (h + 6 days before the test block)"] = (
+        "not detectably above the widest gap for every label length and model" if qok
+        else "detectably above the widest gap somewhere: see the lines above")
+    sizing_chart(rows, out_dir)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "sizing.json").write_text(json.dumps(rows))
+    return res
+
+
+def sizing_chart(rows: list[dict], out_dir: Path) -> None:
+    """Walk-forward IC against the gap, one panel per label length, ridge and LightGBM."""
+    from pcv.features import HORIZONS
+
+    fig, axes = plt.subplots(1, 4, figsize=(13, 4.2), sharey=True)
+    for ax, h in zip(axes, HORIZONS, strict=True):
+        for mname, col in (("ridge", plots.SERIES[0]), ("lightgbm", plots.SERIES[2])):
+            sel = [r for r in rows if r["h"] == h and r["model"] == mname
+                   and r["kind"] == "walk-forward"]
+            ax.plot([r["setting"] for r in sel], [r["ic"] for r in sel], "o-", color=col, lw=2,
+                    ms=5, label=mname)
+        ax.axvline(h + 6, color=plots.TEXT_2, lw=1, ls="--")
+        ax.set_title(f"{h}-day labels", loc="left")
+        ax.set_xlabel("gap before test (trading days)")
+    axes[0].set_ylabel("walk-forward IC, 2016-2022")
+    axes[0].legend(frameon=False)
+    fig.text(0.99, 0.01, "dashed: the reference model's gap (h + 6)", ha="right", color=plots.TEXT_2,
+             fontsize=9)
+    fig.subplots_adjust(wspace=0.12, bottom=0.18)
+    plots.save(fig, out_dir, "sizing")
+
+
 REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features,
-           "check": report_check}
+           "check": report_check, "sizing": report_sizing}

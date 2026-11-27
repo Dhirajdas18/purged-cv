@@ -46,3 +46,14 @@ def test_cv_score_from_day_scores_only_later_rows():
     a = cv_score(lambda: Ridge(alpha=1.0), p, PurgedKFold(5, h=5))
     b = cv_score(lambda: Ridge(alpha=1.0), p, PurgedKFold(5, h=5), from_day=150)
     assert a != b
+
+
+def test_cv_daily_series_mean_equals_score():
+    from sklearn.linear_model import Ridge
+
+    from pcv.evaluate import cv_daily
+
+    p = panel(20, 300, h=5, edge=0.2, seed=4)
+    mk = lambda: Ridge(alpha=1.0)  # noqa: E731
+    s = cv_daily(mk, p, PurgedKFold(5, h=5))
+    assert abs(s.mean() - cv_score(mk, p, PurgedKFold(5, h=5))) < 1e-12

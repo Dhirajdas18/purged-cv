@@ -4,13 +4,26 @@ import numpy as np
 import pandas as pd
 
 
-def daily_ic(pred, y, day) -> float:
-    """Mean over days of the rank correlation between predictions and labels across stocks."""
+def ic_series(pred, y, day) -> pd.Series:
+    """Rank correlation between predictions and labels across stocks, one value per day."""
     df = pd.DataFrame({"p": pred, "y": y, "d": day}).dropna()
     r = df.groupby("d")[["p", "y"]].rank()
     r["d"] = df["d"]
-    ic = r.groupby("d").apply(lambda g: g["p"].corr(g["y"]), include_groups=False)
-    return float(ic.mean())
+    return r.groupby("d").apply(lambda g: g["p"].corr(g["y"]), include_groups=False)
+
+
+def daily_ic(pred, y, day) -> float:
+    """Mean over days of the rank correlation between predictions and labels across stocks."""
+    return float(ic_series(pred, y, day).mean())
+
+
+def cv_daily(make_model, p, splitter, from_day: int | None = None) -> pd.Series:
+    """Daily IC of out-of-fold predictions (splitters that test each row at most once)."""
+    joined = np.full(len(p.y), np.nan)
+    for tr, te in splitter.split(p.X, p.y, groups=p.day):
+        joined[te] = make_model().fit(p.X[tr], p.y[tr]).predict(p.X[te])
+    keep = np.ones(len(p.y), bool) if from_day is None else p.day >= from_day
+    return ic_series(joined[keep], p.y[keep], p.day[keep])
 
 
 class ShuffledKFold:
