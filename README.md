@@ -14,7 +14,7 @@ method, a label length and an embargo, and see which trading days each split tra
 ## Features
 
 - [x] Splitters: purged k-fold, embargo, walk-forward with a purge, combinatorial purged CV with backtest paths
-- [ ] The leak on synthetic stock panels with a known true edge, including harder cases
+- [x] The leak on synthetic stock panels with a known true edge, including harder cases
 - [ ] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
 - [ ] Which cross-validation score predicts the score a model really gets later
 - [ ] How big the purge and embargo need to be, by label length
@@ -42,11 +42,38 @@ data every rule here is chosen on), with 5 folds.
   1,225, the same as a purge plus a 6-day embargo.
 - **Cheap is not the same as needed.** Whether those few days change the score is the next finding.
 
+### 2. Shuffled k-fold found an edge of 0.28 where there was none; splitting by day removed it
+
+<a href="docs/img/leak.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/leak.png"><img src="docs/img/leak.gif" alt="Cross-validation score minus true score for six methods, ridge and boosted trees, on synthetic panels with no true edge" width="720"></picture></a>
+
+Synthetic stock panels, 50 stocks × 1,000 days, with five slow features (each day 98% of yesterday's
+value plus noise, like a momentum signal). Feature 1 predicts the next day's return with a daily rank
+correlation set by hand (0, or 0.03, a realistic size); the others are noise; shocks have fat tails. The
+label is the return over the next 5 or 21 days, minus that day's average across stocks. Each method's
+cross-validation score (mean daily rank IC of out-of-fold predictions) is compared with the score the
+same model really gets on a fresh panel from the same process, 10 panels per case, paired. Ridge and
+gradient-boosted trees; note the two charts' different scales.
+
+- **Shuffling rows is the leak.** With no true edge, boosted trees scored an IC of +0.161 (5-day labels)
+  and +0.277 (21-day) under shuffled k-fold, against a true score of about 0. Ridge, which can't
+  memorise, was off by much less (+0.016 and +0.037).
+- **Splitting by day did almost all the work.** Plain k-fold over blocks of days, with no purge, was off
+  by +0.012 (5-day) and +0.009 (21-day) for the trees. Purging closed the 21-day gap to +0.001 and left
+  the 5-day gap at +0.011.
+- **The embargo changed nothing in these cases.** Purged with and without a 21-day embargo differed by
+  0.003 or less everywhere, including a case with momentum in returns, which moved no result by more
+  than 0.002.
+- **Walk-forward is the most cautious.** With a small true edge and 21-day labels it scored 0.016
+  (trees) and 0.018 (ridge) below the truth, training on half the data on average; combinatorial purged
+  CV was 0.010–0.011 below.
+- **When the edge flips sign halfway, every method misjudges it.** For ridge, purged k-fold scored
+  −0.049 below a true score near 0 and combinatorial purged −0.033; walk-forward came closest at −0.017.
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```

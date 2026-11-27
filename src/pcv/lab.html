@@ -46,3 +46,42 @@ gap of label-length days on each side; walk-forward never trains on the future.<
   draw();
 })();
 </script>
+<h3 id="leak">How far each method's score sits from the truth</h3>
+<p class="note">Synthetic stock panels (50 stocks, 1,000 days, slow features) where the true edge is set by
+hand. Each bar is a method's cross-validation score; the line is the score the same model really gets on
+fresh data from the same process. Average of 10 panels.</p>
+<div class="calc">
+  <div class="calc-controls">
+    <label>Model <select id="k-m"><option value="boosted trees" selected>boosted trees</option><option value="ridge">ridge</option></select></label>
+    <label>Case <select id="k-c">
+      <option value="base|21|0" selected>no edge, 21-day labels</option>
+      <option value="base|21|0.03">small edge, 21-day labels</option>
+      <option value="base|5|0">no edge, 5-day labels</option>
+      <option value="base|5|0.03">small edge, 5-day labels</option>
+      <option value="edge flips halfway|21|0.03">edge flips halfway</option>
+      <option value="returns with momentum|21|0">returns with momentum, no edge</option>
+    </select></label>
+  </div>
+</div>
+<div id="k-bars" class="hbars" role="img" aria-label="Cross-validation score by method against the true score"></div>
+<p class="note" id="k-note" aria-live="polite"></p>
+<script>
+(() => {
+  const R = $leak, el = (id) => document.getElementById(id);
+  const f3 = (v) => (v < 0 ? "−" : "+") + Math.abs(v).toFixed(3);
+  function draw() {
+    const [c, h, e] = el("k-c").value.split("|"), m = el("k-m").value;
+    const rows = R.filter((r) => r.case === c && r.h === +h && r.edge === +e && r.model === m);
+    if (!rows.length) { el("k-bars").textContent = ""; return; }
+    const t = rows[0].true, hi = Math.max(0.05, ...rows.map((r) => Math.abs(r.cv)), Math.abs(t));
+    const pos = (v) => 50 + 50 * v / hi;
+    el("k-bars").innerHTML = rows.map((r) => {
+      const a = Math.min(pos(0), pos(r.cv)), w = Math.abs(pos(r.cv) - pos(0));
+      return `<div class="hb"><span class="hb-l">${r.method}</span><span class="hb-t"><i class="hb-bar" style="left:${a}%;width:${w}%"></i><i class="hb-true" style="left:${pos(t)}%"></i></span><span class="hb-v">${f3(r.cv)}</span></div>`;
+    }).join("");
+    el("k-note").textContent = `True score on fresh data: ${f3(t)} (vertical line). Scores are mean daily rank IC; 0 means no skill.`;
+  }
+  for (const id of ["k-m", "k-c"]) el(id).addEventListener("change", draw);
+  draw();
+})();
+</script>

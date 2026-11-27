@@ -120,4 +120,84 @@ def report_splits(out_dir: Path) -> dict:
     return res
 
 
-REPORTS = {"splits": report_splits}
+METHODS = ["shuffled k-fold", "k-fold, no purge", "purged", "purged + embargo", "walk-forward",
+           "combinatorial purged"]
+REPS = 10
+
+
+def _splitters(h: int):
+    from pcv.evaluate import ShuffledKFold
+    from pcv.split import CombinatorialPurged, PurgedKFold, WalkForward
+
+    cvs = [ShuffledKFold(5), PurgedKFold(5), PurgedKFold(5, h), PurgedKFold(5, h, h),
+           WalkForward(5, h), CombinatorialPurged(6, 2, h)]
+    return dict(zip(METHODS, cvs, strict=True))
+
+
+def _models():
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.linear_model import Ridge
+
+    return {"ridge": lambda: Ridge(alpha=1.0),
+            "boosted trees": lambda: HistGradientBoostingRegressor(max_iter=100, random_state=0)}
+
+
+def leak_chart(rows: list[dict], out_dir: Path) -> None:
+    """CV score minus true score by method, 21-day labels, no true edge."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
+    for i, (ax, mname) in enumerate(zip(axes, ("ridge", "boosted trees"), strict=True)):
+        sel = [r for r in rows if r["h"] == 21 and r["edge"] == 0.0 and r["case"] == "base"
+               and r["model"] == mname]
+        y = np.arange(len(sel))
+        ax.barh(y, [r["gap"] for r in sel], color=[plots.MUTED if r["method"] in
+                ("shuffled k-fold", "k-fold, no purge") else plots.SERIES[0] for r in sel],
+                xerr=[2 * r["gap_se"] for r in sel], ecolor=plots.TEXT_2, height=0.6)
+        ax.axvline(0, color=plots.TEXT, lw=1)
+        ax.set_yticks(y, [r["method"] for r in sel] if i == 0 else [])
+        ax.invert_yaxis()
+        ax.set_title(f"{mname}: CV score minus true score", loc="left")
+        ax.set_xlabel("IC points (21-day labels, no true edge)")
+        ax.grid(axis="y", visible=False)
+    fig.subplots_adjust(wspace=0.08, left=0.17)
+    plots.save(fig, out_dir, "leak")
+
+
+def report_leak(out_dir: Path) -> dict:
+    """Each CV method's score against the true score on fresh panels from the same process:
+    synthetic panels, 50 stocks x 1,000 days, slow features, known edge."""
+    from pcv.evaluate import cv_score, true_score
+    from pcv.synth import panel
+
+    cases = [(h, e, "base") for h in (5, 21) for e in (0.0, 0.03)]
+    cases += [(21, 0.03, "edge flips halfway"), (21, 0.0, "returns with momentum")]
+    rows, res = [], {}
+    for h, edge, kind in cases:
+        kw = {"flip": kind == "edge flips halfway",
+              "ret_ar": 0.05 if kind == "returns with momentum" else 0.0}
+        for mname, mk in _models().items():
+            cv = {m: [] for m in METHODS}
+            truth = []
+            for rep in range(REPS):
+                p = panel(50, 1000, h, edge, seed=rep, **kw)
+                fresh = panel(50, 1000, h, edge, seed=1000 + rep, **kw)
+                truth.append(true_score(mk, p, fresh))
+                for m, sp in _splitters(h).items():
+                    cv[m].append(cv_score(mk, p, sp))
+            t = np.array(truth)
+            for m in METHODS:
+                gap = np.array(cv[m]) - t
+                rows.append({"h": h, "edge": edge, "case": kind, "model": mname, "method": m,
+                             "cv": float(np.mean(cv[m])), "true": float(t.mean()),
+                             "gap": float(gap.mean()),
+                             "gap_se": float(gap.std(ddof=1) / np.sqrt(REPS))})
+            res[f"{kind}, h {h}, edge {edge}, {mname}"] = "; ".join(
+                f"{r['method']} {r['cv']:+.3f} (gap {r['gap']:+.3f} ± {r['gap_se']:.3f})"
+                for r in rows[-len(METHODS):]) + f"; true {t.mean():+.3f}"
+
+    leak_chart(rows, out_dir)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "leak.json").write_text(json.dumps(rows))
+    return res
+
+
+REPORTS = {"splits": report_splits, "leak": report_leak}

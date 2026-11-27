@@ -22,7 +22,9 @@ REPO = "https://github.com/Dhirajdas18/purged-cv"
 
 
 def lab_section(d: dict) -> str:
-    return LAB.replace("$data", json.dumps(d, separators=(",", ":")))
+    lab = LAB.replace("$leak", json.dumps(d.get("leak", []), separators=(",", ":")))
+    return lab.replace("$data", json.dumps({k: v for k, v in d.items() if k != "leak"},
+                                           separators=(",", ":")))
 
 
 def method_section(_: dict) -> str:
