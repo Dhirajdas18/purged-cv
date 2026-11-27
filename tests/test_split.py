@@ -111,3 +111,13 @@ def test_block_walkforward_uses_given_starts():
     assert [sorted(set(d[te]))[0] for _, te in sp] == [40, 70]
     assert sorted(set(d[sp[0][1]]))[-1] == 69 and sorted(set(d[sp[1][1]]))[-1] == 99
     assert max(d[sp[0][0]]) == 40 - 5 - 6
+
+
+def test_train_never_contains_a_test_day():
+    from pcv.split import BlockWalkForward, CombinatorialPurged, WalkForward
+
+    d = days(100, 2)
+    for cv in (BlockWalkForward([40, 70], 0, 0), WalkForward(5, 0, 0), PurgedKFold(5),
+               CombinatorialPurged(6, 2)):
+        for tr, te in cv.split(None, groups=d):
+            assert not set(d[tr]) & set(d[te])

@@ -67,7 +67,7 @@ class WalkForward:
     def split(self, X=None, y=None, groups=None):
         day = _days(groups)
         for block in _blocks(day, self.n_splits)[1:]:
-            train = day <= block[0] - self.h - self.embargo
+            train = day <= min(block[0] - self.h - self.embargo, block[0] - 1)  # never a test day
             yield np.flatnonzero(train), np.flatnonzero(np.isin(day, block))
 
 
@@ -119,4 +119,5 @@ class BlockWalkForward:
         ends = self.starts[1:] + [day.max() + 1]
         for a, b in zip(self.starts, ends, strict=True):
             test = (day >= a) & (day < b)
-            yield np.flatnonzero(day <= a - self.h - self.embargo), np.flatnonzero(test)
+            train = day <= min(a - self.h - self.embargo, a - 1)  # never a test day
+            yield np.flatnonzero(train), np.flatnonzero(test)

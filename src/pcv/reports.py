@@ -234,7 +234,7 @@ def lake_table(force: bool = False):
 
 
 def lake_panel(f, h: int, end: str):
-    """Rows up to `end` with a label, as a Panel (y = daily rank of the excess return, the
+    """Rows whose labels end by `end`, as a Panel (y = daily rank of the excess return, the
     training target; IC is scored against it, the same ranks as xs_h)."""
     import pandas as pd
 
@@ -242,8 +242,9 @@ def lake_panel(f, h: int, end: str):
     from pcv.features import FEAT_A
     from pcv.synth import Panel
 
-    f = f[(f["date"] <= pd.Timestamp(end)) & f[f"y_{h}"].notna()]
     cal = calendar()
+    last = int(np.searchsorted(cal, np.datetime64(pd.Timestamp(end)), side="right")) - 1
+    f = f[(f["date"] <= cal[last - h]) & f[f"y_{h}"].notna()]  # labels end by `end`
     return Panel(f[FEAT_A].to_numpy(np.float32), f[f"y_{h}"].to_numpy(float),
                  np.searchsorted(cal, f["date"].to_numpy()), np.zeros(len(f))), cal
 
@@ -318,7 +319,8 @@ def report_features(out_dir: Path) -> dict:
 
 TREND = ["mom_12_1", "mom_6m", "mom_1m", "dist_ma200", "dist_ma50"]
 RISK = ["vol_20", "vol_252", "idio_vol_60", "beta_60", "turnover_rank"]
-CHECK = Path("runs/check.json")  # real 2023 - Nov 2025 scores, computed once
+# real 2023 - Nov 2025 scores, computed once; a fixed path, whatever folder the report runs from
+CHECK = Path(__file__).resolve().parents[2] / "runs" / "check.json"
 
 
 def variants() -> list[dict]:
@@ -354,8 +356,10 @@ def _variant_panel(f, v, cal, lo=None, hi=None):
     m = f[f"y_{v['h']}"].notna()
     if lo is not None:
         m &= f["date"] >= pd.Timestamp(lo)
-    if hi is not None:
-        m &= f["date"] <= pd.Timestamp(hi)
+    if hi is not None:  # only labels that end by the cut: no return after it reaches training
+        last = cal[int(np.searchsorted(cal, np.datetime64(pd.Timestamp(hi)), side="right")) - 1]
+        end = cal[max(int(np.searchsorted(cal, np.datetime64(last))) - v["h"], 0)]
+        m &= f["date"] <= end
     g = f[m]
     return Panel(g[v["features"]].to_numpy(np.float32), g[f"y_{v['h']}"].to_numpy(float),
                  np.searchsorted(cal, g["date"].to_numpy()), np.zeros(len(g)))
@@ -479,8 +483,9 @@ def check_chart(rows, cv, real, out_dir: Path) -> None:
 
 def _grid(h: int):
     """(kind, label, splitter args) per plan-topic5, duplicates dropped."""
-    kf = list(dict.fromkeys([(0, 0), (-(-h // 2), 0), (h, 0), (h, 6), (h, h), (h, 2 * h)]))
-    wf = sorted(set([0, h, h + 6, 2 * h, 3 * h]))  # smallest first: the rule takes the first pass
+    kf = sorted(set([(0, 0), (-(-h // 2), 0), (h, 0), (h, 6), (h, h), (h, 2 * h)]))
+    # gap g: training ends g trading days before the test (1 = the day before)
+    wf = sorted(set([1, h, h + 6, 2 * h, 3 * h]))  # smallest first: the rule takes the first pass
     return kf, wf
 
 
@@ -500,7 +505,7 @@ def report_sizing(out_dir: Path) -> dict:
               for d in pd.date_range("2016-01-01", PICK_END, freq="6MS")]
     cache = Path("out/sizing.json")
     done = json.loads(cache.read_text()) if cache.exists() else {}
-    rows, res = [], {}
+    rows, res, need_wf = [], {}, {}
     for h in HORIZONS:
         kf, wf = _grid(h)
         for mname in ("ridge", "lightgbm"):
@@ -519,7 +524,7 @@ def report_sizing(out_dir: Path) -> dict:
                         cache.write_text(json.dumps(done))
                     series[(kind, st)] = pd.Series(done[key]).rename(int)
             for kind, settings in (("k-fold", kf), ("walk-forward", wf)):
-                ref = series[(kind, settings[-1])]
+                ref = series[(kind, (h, 2 * h) if kind == "k-fold" else 3 * h)]  # plan-topic5
                 needed = None
                 for st in settings:
                     d = (series[(kind, st)] - ref).dropna()
@@ -532,6 +537,8 @@ def report_sizing(out_dir: Path) -> dict:
                         needed = st
                 lab = (f"purge {needed[0]}, embargo {needed[1]}" if kind == "k-fold"
                        else f"gap {needed} days")
+                if kind == "walk-forward":
+                    need_wf[(h, mname)] = needed
                 parts = "; ".join(
                     (f"({r['setting'][0]},{r['setting'][1]}) " if kind == "k-fold"
                      else f"gap {r['setting']} ") + f"{r['ic']:+.4f} (t {r['t']:+.1f})"
@@ -541,14 +548,13 @@ def report_sizing(out_dir: Path) -> dict:
         for mname in ("ridge", "lightgbm"):
             w = {r["setting"]: r["ic"] for r in rows
                  if r["h"] == h and r["model"] == mname and r["kind"] == "walk-forward"}
-            res[f"walk-forward, h = {h}, {mname}: no gap minus gap h"] = (
-                f"{w[0] - w[h]:+.4f}; gap h to the widest {min(w[g] for g in w if g >= h):+.4f} .. "
+            res[f"walk-forward, h = {h}, {mname}: gap 1 minus gap h"] = (
+                f"{w[1] - w[h]:+.4f}; gap h to the widest {min(w[g] for g in w if g >= h):+.4f} .. "
                 f"{max(w[g] for g in w if g >= h):+.4f}")
-    qok = all(r["t"] < 2 for r in rows
-              if r["kind"] == "walk-forward" and r["setting"] == r["h"] + 6)
+    qok = all(need_wf[(h, m)] <= h + 6 for h, m in need_wf)  # plan: at or above the needed gap
     res["reference gap (h + 6 days before the test block)"] = (
-        "not detectably above the widest gap for every label length and model" if qok
-        else "detectably above the widest gap somewhere: see the lines above")
+        "at or above the needed walk-forward gap for every label length and model" if qok
+        else "below the needed walk-forward gap somewhere: see the lines above")
     sizing_chart(rows, out_dir)
     DATA.mkdir(parents=True, exist_ok=True)
     (DATA / "sizing.json").write_text(json.dumps(rows))
@@ -608,12 +614,19 @@ def report_paths(out_dir: Path) -> dict:
     in_range = (real >= P.min(1)) & (real <= P.max(1))
     in_2sd = np.abs(real - mean) <= 2 * sd
     rho = pd.Series(sd).rank().corr(pd.Series(np.abs(real - mean)).rank())
+    hzs = np.array([v["h"] for v in variants()])
+    within = {int(h): float(pd.Series(sd[hzs == h]).rank().corr(
+        pd.Series(np.abs(real - mean)[hzs == h]).rank())) for h in sorted(set(hzs))}
     res = {"paths": f"7 per model, 48 models; path sd median {np.median(sd):.4f} (range "
                     f"{sd.min():.4f} to {sd.max():.4f}); mean real minus path mean "
                     f"{(real - mean).mean():+.4f}",
            "real score inside the model's path range": f"{in_range.sum()} of 48",
            "real score inside path mean ± 2 sd": f"{in_2sd.sum()} of 48",
-           "rank correlation of path sd with |real - path mean|": f"{rho:.2f}"}
+           "rank correlation of path sd with |real - path mean|": (
+               f"{rho:.2f} over all 48; within one label length (12 models each): "
+               + ", ".join(f"h {h} {c:+.2f}" for h, c in within.items())
+               + "; median path sd by label length: "
+               + ", ".join(f"h {h} {np.median(sd[hzs == h]):.4f}" for h in within))}
 
     from pcv.evaluate import expected_max
 
