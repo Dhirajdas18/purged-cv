@@ -15,7 +15,7 @@ method, a label length and an embargo, and see which trading days each split tra
 
 - [x] Splitters: purged k-fold, embargo, walk-forward with a purge, combinatorial purged CV with backtest paths
 - [x] The leak on synthetic stock panels with a known true edge, including harder cases
-- [ ] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
+- [x] A quant-style model on NSE stocks: features and labels rebuilt and checked against the original
 - [ ] Which cross-validation score predicts the score a model really gets later
 - [ ] How big the purge and embargo need to be, by label length
 - [ ] Combinatorial purged CV: a spread of out-of-sample results instead of one number
@@ -69,23 +69,48 @@ gradient-boosted trees; note the two charts' different scales.
 - **When the edge flips sign halfway, every method misjudges it.** For ridge, purged k-fold scored
   −0.049 below a true score near 0 and combinatorial purged −0.033; walk-forward came closest at −0.017.
 
+### 3. The reference model's features rebuilt exactly; walk-forward scores them lower than purged k-fold
+
+<a href="docs/img/features.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/features.png"><img src="docs/img/features.gif" alt="Mean daily rank IC of the reference model's slow features by label length, ridge and LightGBM, purged five-fold against walk-forward" width="720"></picture></a>
+
+the reference model's ten slow stock features (momentum over 1, 6 and 12 months, distance from the 50- and 200-day
+averages, 20- and 252-day volatility, 60-day beta and idiosyncratic volatility against NIFTY, 63-day
+turnover) and its labels were rebuilt from the archive with the same formulas: universe rows only, each
+feature clipped at the 1st and 99th percentile and ranked across stocks each day. Then Ridge and LightGBM
+(the reference model's settings, on these features only; the reference model's LightGBM also sees market-wide features) were
+scored on the rule-picking data, Jan 2016 – Dec 2022, as mean daily rank IC, by purged 5-fold and by
+reference-style walk-forward (retrained every 6 months, training ending h + 6 days before each block).
+
+- **The rebuild matches the reference model row for row.** All 570,800 shared rows up to Aug 2025 and all 18
+  feature and label columns agree, largest gap 0.0, no mismatch in missing values.
+- **The features carry a steady signal.** Ridge: IC +0.056 (1-day labels), +0.043 (5-day), +0.048
+  (21-day), +0.048 (63-day) under purged 5-fold.
+- **Walk-forward scored lower in 7 of 8 cases,** most for LightGBM on 21-day labels (+0.028 against
+  +0.041). Walk-forward trains only on the past, so on these days its models saw less data.
+- **Ridge matched or beat LightGBM at every label length,** by 0.000 to 0.007 under purged 5-fold.
+- **Which score to believe is still open.** The synthetic panels (finding 2) had walk-forward slightly
+  below the truth; the next finding checks both against what the models really scored later.
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```
 
 The findings need a local NSE bhavcopy archive with `panel.parquet` (`PCV_LAKE_DIR`); it is not committed,
-and nothing after 26 Nov 2025 is read from it. Tests run on hand-made cases.
+and nothing after 26 Nov 2025 is read from it. `pcv report features` also needs the reference model's
+`features.parquet` for the match check (`PCV_QL_FEATURES`). Tests run on hand-made cases.
 
 ## Design
 
 - `src/pcv/split.py`: `PurgedKFold`, `WalkForward`, `CombinatorialPurged` (with `paths()`), scikit-learn
   style: `split(X, y, groups=day)` with each row's trading-day number.
 - `src/pcv/data.py`: the lake reader, filtered at read time to 26 Nov 2025; the trading calendar.
+- `src/pcv/features.py`: the reference model's slow features and labels rebuilt from the lake.
+- `src/pcv/synth.py`, `evaluate.py`: synthetic panels with a known edge; daily rank IC and out-of-fold scoring.
 - `src/pcv/reports.py`, `plots.py`, `site.py`: report numbers and charts, chart style, the lab page.
 - Conventions: a row's label covers days day+1 to day+h; rules are chosen on data up to Dec 2022 and
   checked once on Jan 2023 – Nov 2025; the reference model's last 365 days (from 27 Nov 2025) are never read.

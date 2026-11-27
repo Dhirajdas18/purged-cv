@@ -200,4 +200,118 @@ def report_leak(out_dir: Path) -> dict:
     return res
 
 
-REPORTS = {"splits": report_splits, "leak": report_leak}
+# the reference model's LightGBM settings, seed added for repeatability
+LGB_PARAMS = dict(n_estimators=300, learning_rate=0.03, num_leaves=31, min_child_samples=500,
+                  subsample=0.7, subsample_freq=1, colsample_bytree=0.7, reg_lambda=5.0,
+                  max_bin=63, verbose=-1, random_state=0)
+CHECK_END = "2025-08-01"  # rows whose 63-day labels are complete inside the data
+
+
+def lake_models():
+    """The reference model's two models: Ridge on gaps filled with 0, LightGBM on gaps as they are."""
+    from lightgbm import LGBMRegressor
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import make_pipeline
+
+    return {"ridge": lambda: make_pipeline(SimpleImputer(strategy="constant", fill_value=0.0),
+                                           Ridge(alpha=1.0)),
+            "lightgbm": lambda: LGBMRegressor(**LGB_PARAMS)}
+
+
+def lake_table(force: bool = False):
+    """The rebuilt feature table, cached in out/ (never committed)."""
+    import pandas as pd
+
+    from pcv.features import build
+
+    path = Path("out/features.parquet")
+    if force or not path.exists():
+        path.parent.mkdir(exist_ok=True)
+        build().to_parquet(path)
+    return pd.read_parquet(path)
+
+
+def lake_panel(f, h: int, end: str):
+    """Rows up to `end` with a label, as a Panel (y = daily rank of the excess return, the
+    training target; IC is scored against it, the same ranks as xs_h)."""
+    import pandas as pd
+
+    from pcv.data import calendar
+    from pcv.features import FEAT_A
+    from pcv.synth import Panel
+
+    f = f[(f["date"] <= pd.Timestamp(end)) & f[f"y_{h}"].notna()]
+    cal = calendar()
+    return Panel(f[FEAT_A].to_numpy(np.float32), f[f"y_{h}"].to_numpy(float),
+                 np.searchsorted(cal, f["date"].to_numpy()), np.zeros(len(f))), cal
+
+
+def features_chart(rows: list[dict], out_dir: Path) -> None:
+    """Baseline IC by horizon: purged 5-fold bars, walk-forward dots."""
+    from pcv.features import HORIZONS
+
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    x = np.arange(len(HORIZONS))
+    for k, (mname, col) in enumerate([("ridge", plots.SERIES[0]), ("lightgbm", plots.SERIES[2])]):
+        sel = [r for r in rows if r["model"] == mname]
+        ax.bar(x + (k - 0.5) * 0.38, [r["purged"] for r in sel], 0.36, color=col,
+               label=f"{mname}, purged 5-fold")
+        ax.scatter(x + (k - 0.5) * 0.38, [r["walk"] for r in sel], color=plots.TEXT, zorder=3,
+                   s=24, label="walk-forward" if k == 0 else None)
+    ax.axhline(0, color=plots.TEXT, lw=1)
+    ax.set_xticks(x, [f"{h}-day labels" for h in HORIZONS])
+    ax.set_ylabel("mean daily rank IC")
+    ax.set_title("the reference model's slow features on NSE stocks, scored 2016-2022", loc="left")
+    ax.set_ylim(0, max(max(r["purged"], r["walk"]) for r in rows) * 1.35)
+    ax.legend(frameon=False, ncol=3, loc="upper left")
+    ax.grid(axis="x", visible=False)
+    plots.save(fig, out_dir, "features")
+
+
+def report_features(out_dir: Path) -> dict:
+    """The reference model's slow features and labels rebuilt from the lake and matched against its own
+    features.parquet; then a baseline for Ridge and LightGBM on data up to Dec 2022."""
+    import os
+
+    import pandas as pd
+
+    from pcv.data import PICK_END
+    from pcv.evaluate import cv_score
+    from pcv.features import FEAT_A, HORIZONS
+    from pcv.split import BlockWalkForward, PurgedKFold
+
+    f = lake_table(force=True)
+    res = {"table": f"{len(f):,} universe rows, {f['date'].min():%d %b %Y} - "
+                    f"{f['date'].max():%d %b %Y}, {f['symbol'].nunique()} stocks"}
+    cols = FEAT_A + [f"xs_{h}" for h in HORIZONS] + [f"y_{h}" for h in HORIZONS]
+    q = pd.read_parquet(os.environ["PCV_QL_FEATURES"], columns=["date", "symbol"] + cols,
+                        filters=[("date", "<=", pd.Timestamp(CHECK_END))])
+    m = f[f["date"] <= CHECK_END].merge(q, on=["date", "symbol"], suffixes=("", "_q"))
+    worst = max(float((m[c].astype(float) - m[c + "_q"].astype(float)).abs().max())
+                for c in cols)
+    nan_diff = max(float((m[c].isna() != m[c + "_q"].isna()).mean()) for c in cols)
+    res["port check against the reference model's features.parquet"] = (
+        f"{len(m):,} shared rows of {int((f['date'] <= CHECK_END).sum()):,} (to {CHECK_END}), "
+        f"{len(cols)} columns: largest gap {worst:.1e}, missing-value mismatch {nan_diff:.2%}")
+
+    rows = []
+    for h in HORIZONS:
+        p, cal = lake_panel(f, h, PICK_END)
+        starts = [int(np.searchsorted(cal, pd.Timestamp(d)))
+                  for d in pd.date_range("2016-01-01", PICK_END, freq="6MS")]
+        for mname, mk in lake_models().items():
+            pk = cv_score(mk, p, PurgedKFold(5, h), from_day=starts[0])  # same days as walk-forward
+            wf = cv_score(mk, p, BlockWalkForward(starts, h, 6))
+            rows.append({"h": h, "model": mname, "purged": pk, "walk": wf})
+            res[f"h = {h}, {mname}"] = (f"IC on Jan 2016 - Dec 2022: purged 5-fold {pk:+.4f}; "
+                                        f"reference-style walk-forward (6-month blocks, embargo 6) "
+                                        f"{wf:+.4f}")
+
+    features_chart(rows, out_dir)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "features.json").write_text(json.dumps(rows))
+    return res
+
+
+REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features}

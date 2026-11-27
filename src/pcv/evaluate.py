@@ -29,8 +29,10 @@ class ShuffledKFold:
             yield np.concatenate([f for j, f in enumerate(folds) if j != k]), np.sort(te)
 
 
-def cv_score(make_model, p, splitter) -> float:
-    """IC of out-of-fold predictions. For combinatorial purged CV, the mean IC over its paths."""
+def cv_score(make_model, p, splitter, from_day: int | None = None) -> float:
+    """IC of out-of-fold predictions (only rows from `from_day` on, if given). For combinatorial
+    purged CV, the mean IC over its paths."""
+    keep = np.ones(len(p.y), bool) if from_day is None else p.day >= from_day
     preds = []
     for tr, te in splitter.split(p.X, p.y, groups=p.day):
         m = make_model().fit(p.X[tr], p.y[tr])
@@ -41,13 +43,13 @@ def cv_score(make_model, p, splitter) -> float:
         joined = np.full(len(p.y), np.nan)
         for out in preds:  # each row is tested at most once (walk-forward: some never)
             joined = np.where(np.isnan(joined), out, joined)
-        return daily_ic(joined, p.y, p.day)
+        return daily_ic(joined[keep], p.y[keep], p.day[keep])
     blocks = np.array_split(np.unique(p.day), splitter.n_groups)
     group = np.searchsorted([b[0] for b in blocks], p.day, side="right") - 1
     ics = []
     for path in splitter.paths():
         joined = np.choose(group, [preds[s] for s in path])
-        ics.append(daily_ic(joined, p.y, p.day))
+        ics.append(daily_ic(joined[keep], p.y[keep], p.day[keep]))
     return float(np.mean(ics))
 
 

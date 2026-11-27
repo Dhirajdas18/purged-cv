@@ -85,3 +85,22 @@ fresh data from the same process. Average of 10 panels.</p>
   draw();
 })();
 </script>
+<h3 id="baseline">On real NSE stocks: two ways of testing, same days</h3>
+<p class="note">The reference model's ten slow stock features, rebuilt from the archive and matched to the reference model's own
+values row for row, scored Jan 2016 – Dec 2022 (mean daily rank IC). Purged 5-fold trains on data from both
+sides of each test block; walk-forward trains only on the past, retraining every 6 months as the reference model does.
+Which of the two predicts the real later score is the next test.</p>
+<div class="table-scroll"><table class="data" id="f-table">
+  <thead><tr><th scope="col">Label length</th><th scope="col">Ridge, purged</th><th scope="col">Ridge, walk-forward</th><th scope="col">LightGBM, purged</th><th scope="col">LightGBM, walk-forward</th></tr></thead>
+  <tbody></tbody>
+</table></div>
+<script>
+(() => {
+  const F = $feat, f4 = (v) => (v < 0 ? "−" : "") + Math.abs(v).toFixed(4);
+  const hs = [...new Set(F.map((r) => r.h))];
+  document.querySelector("#f-table tbody").innerHTML = hs.map((h) => {
+    const g = (m) => F.find((r) => r.h === h && r.model === m);
+    return `<tr><th scope="row">${h} day${h > 1 ? "s" : ""}</th><td>${f4(g("ridge").purged)}</td><td>${f4(g("ridge").walk)}</td><td>${f4(g("lightgbm").purged)}</td><td>${f4(g("lightgbm").walk)}</td></tr>`;
+  }).join("");
+})();
+</script>

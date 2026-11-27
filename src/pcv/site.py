@@ -23,8 +23,9 @@ REPO = "https://github.com/Dhirajdas18/purged-cv"
 
 def lab_section(d: dict) -> str:
     lab = LAB.replace("$leak", json.dumps(d.get("leak", []), separators=(",", ":")))
-    return lab.replace("$data", json.dumps({k: v for k, v in d.items() if k != "leak"},
-                                           separators=(",", ":")))
+    lab = lab.replace("$feat", json.dumps(d.get("feat", []), separators=(",", ":")))
+    rest = {k: v for k, v in d.items() if k not in ("leak", "feat")}
+    return lab.replace("$data", json.dumps(rest, separators=(",", ":")))
 
 
 def method_section(_: dict) -> str:

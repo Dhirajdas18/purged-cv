@@ -101,3 +101,13 @@ def test_cpcv_k1_equals_purged_kfold():
     b = list(PurgedKFold(4, h=3, embargo=1).split(None, groups=d))
     for (tr1, te1), (tr2, te2) in zip(a, b, strict=True):
         assert tr1.tolist() == tr2.tolist() and te1.tolist() == te2.tolist()
+
+
+def test_block_walkforward_uses_given_starts():
+    from pcv.split import BlockWalkForward
+
+    d = days(100)
+    sp = list(BlockWalkForward([40, 70], h=5, embargo=6).split(None, groups=d))
+    assert [sorted(set(d[te]))[0] for _, te in sp] == [40, 70]
+    assert sorted(set(d[sp[0][1]]))[-1] == 69 and sorted(set(d[sp[1][1]]))[-1] == 99
+    assert max(d[sp[0][0]]) == 40 - 5 - 6

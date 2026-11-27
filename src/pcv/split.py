@@ -101,3 +101,22 @@ class CombinatorialPurged:
                      for g in range(self.n_groups)]
         return [[per_group[g][j] for g in range(self.n_groups)]
                 for j in range(len(per_group[0]))]
+
+
+class BlockWalkForward:
+    """Walk-forward on fixed calendar blocks (e.g. every 6 months, as the reference model retrains): block i
+    runs from starts[i] to the day before starts[i+1] (the last to the end); training ends h +
+    embargo days before the block starts."""
+
+    def __init__(self, starts: list[int], h: int = 0, embargo: int = 0):
+        self.starts, self.h, self.embargo = list(starts), h, embargo
+
+    def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        return len(self.starts)
+
+    def split(self, X=None, y=None, groups=None):
+        day = _days(groups)
+        ends = self.starts[1:] + [day.max() + 1]
+        for a, b in zip(self.starts, ends, strict=True):
+            test = (day >= a) & (day < b)
+            yield np.flatnonzero(day <= a - self.h - self.embargo), np.flatnonzero(test)

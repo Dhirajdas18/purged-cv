@@ -37,3 +37,12 @@ def test_cv_score_runs_for_kfold_and_walkforward():
     for sp in (PurgedKFold(5, h=5), WalkForward(5, h=5)):
         s = cv_score(lambda: Ridge(alpha=1.0), p, sp)
         assert 0.05 < s < 0.6
+
+
+def test_cv_score_from_day_scores_only_later_rows():
+    from sklearn.linear_model import Ridge
+
+    p = panel(20, 300, h=5, edge=0.2, seed=4)
+    a = cv_score(lambda: Ridge(alpha=1.0), p, PurgedKFold(5, h=5))
+    b = cv_score(lambda: Ridge(alpha=1.0), p, PurgedKFold(5, h=5), from_day=150)
+    assert a != b
