@@ -1,4 +1,4 @@
-name: Engine lab
+name: Split lab
 on:
   push:
     branches: [main]
