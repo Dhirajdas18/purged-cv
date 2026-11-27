@@ -55,8 +55,8 @@ class PurgedKFold:
 class WalkForward:
     """Train only on the past. The day is cut into `n_splits` blocks; each block after the first is
     tested on everything before it, ending h + embargo days before the test starts, so the last
-    training label ends before the first test label begins. The reference model's rule (train on dates before
-    day[first test - (h + 5)]) is embargo = 6."""
+    training label ends before the first test label begins. The reference rule (train on dates
+    before day[first test - (h + 5)]) is embargo = 6."""
 
     def __init__(self, n_splits: int = 5, h: int = 0, embargo: int = 0):
         self.n_splits, self.h, self.embargo = n_splits, h, embargo
@@ -104,9 +104,9 @@ class CombinatorialPurged:
 
 
 class BlockWalkForward:
-    """Walk-forward on fixed calendar blocks (e.g. every 6 months, as the reference model retrains): block i
-    runs from starts[i] to the day before starts[i+1] (the last to the end); training ends h +
-    embargo days before the block starts."""
+    """Walk-forward on fixed calendar blocks (e.g. every 6 months, as the reference model
+    retrains): block i runs from starts[i] to the day before starts[i+1] (the last to the end);
+    training ends h + embargo days before the block starts."""
 
     def __init__(self, starts: list[int], h: int = 0, embargo: int = 0):
         self.starts, self.h, self.embargo = list(starts), h, embargo

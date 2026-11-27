@@ -39,8 +39,8 @@ the close h trading days later, so it depends on days day+1 to day+h.</li>
 <li>Purged k-fold: the days are cut into blocks; one block is the test set. A training day is
 dropped when its label window overlaps the test days’ label windows. An embargo drops a few more
 days after the test labels end, for features that move slowly.</li>
-<li>Walk-forward trains only on the past and stops h + embargo days before the test. The reference model’s
-rule is the same with a 6-day embargo.</li>
+<li>Walk-forward trains only on the past and stops h + embargo days before the test. The reference
+model’s rule is the same with a 6-day embargo.</li>
 <li>Combinatorial purged CV tests every choice of 2 of 6 blocks, purged around each, and joins the
 pieces into 5 complete backtest paths.</li>
 </ul>"""

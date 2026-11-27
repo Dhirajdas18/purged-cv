@@ -1,5 +1,5 @@
-"""The reference model's slow stock features (FEAT_A) and labels, rebuilt from the lake with the same
-formulas (the original implementation), never reading past LAST_DAY."""
+"""The reference model's slow stock features (FEAT_A) and labels, rebuilt from the lake with the
+same formulas as the original implementation, never reading past LAST_DAY."""
 
 import numpy as np
 import pandas as pd

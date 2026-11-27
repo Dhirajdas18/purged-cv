@@ -73,15 +73,15 @@ gradient-boosted trees; note the two charts' different scales.
 
 <a href="docs/img/features.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/features.png"><img src="docs/img/features.gif" alt="Mean daily rank IC of the reference model's slow features by label length, ridge and LightGBM, purged five-fold against walk-forward" width="720"></picture></a>
 
-the reference model's ten slow stock features (momentum over 1, 6 and 12 months, distance from the 50- and 200-day
+The reference model's ten slow stock features (momentum over 1, 6 and 12 months, distance from the 50- and 200-day
 averages, 20- and 252-day volatility, 60-day beta and idiosyncratic volatility against NIFTY, 63-day
 turnover) and its labels were rebuilt from the archive with the same formulas: universe rows only, each
 feature clipped at the 1st and 99th percentile and ranked across stocks each day. Then Ridge and LightGBM
-(the reference model's settings, on these features only; the reference model's LightGBM also sees market-wide features) were
+(the reference settings, on these features only; the reference LightGBM also sees market-wide features) were
 scored on the rule-picking data, Jan 2016 – Dec 2022, as mean daily rank IC, by purged 5-fold and by
-reference-style walk-forward (retrained every 6 months, training ending h + 6 days before each block).
+the reference model's walk-forward (retrained every 6 months, training ending h + 6 days before each block).
 
-- **The rebuild matches the reference model row for row.** All 570,800 shared rows up to Aug 2025 and all 18
+- **The rebuild matches the original row for row.** All 570,800 shared rows up to Aug 2025 and all 18
   feature and label columns agree, largest gap 0.0, no mismatch in missing values.
 - **The features carry a steady signal.** Ridge: IC +0.056 (1-day labels), +0.043 (5-day), +0.048
   (21-day), +0.048 (63-day) under purged 5-fold.
@@ -122,7 +122,7 @@ data, so the t values are rough.
 <a href="docs/img/sizing.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/sizing.png"><img src="docs/img/sizing.gif" alt="Walk-forward IC against the gap before the test block, for 1-, 5-, 21- and 63-day labels, ridge and LightGBM" width="720"></picture></a>
 
 On data to Dec 2022 only (the 2023 – 2025 results of finding 4 were not used), ridge and LightGBM on all ten
-features were scored by reference-style walk-forward with the gap before each test block set to 0, h,
+features were scored by the reference model's walk-forward with the gap before each test block set to 0, h,
 h + 6 (the reference model's), 2h and 3h days, and by purged 5-fold with purges of 0, h/2 and h days and embargoes
 of 0, 6, h and 2h. The decision rule was written down before the run (`plan-topic5`): the needed size is
 the smallest setting whose daily IC is not detectably above the widest setting's (paired t below 2, with
@@ -153,8 +153,8 @@ uv run pytest
 ```
 
 The findings need a local NSE bhavcopy archive with `panel.parquet` (`PCV_LAKE_DIR`); it is not committed,
-and nothing after 26 Nov 2025 is read from it. `pcv report features` also needs the reference model's
-`features.parquet` for the match check (`PCV_QL_FEATURES`). Tests run on hand-made cases.
+and nothing after 26 Nov 2025 is read from it. `pcv report features` also needs the original
+implementation's `features.parquet` for the match check (`PCV_REF_FEATURES`), kept locally. Tests run on hand-made cases.
 
 ## Design
 
@@ -165,7 +165,7 @@ and nothing after 26 Nov 2025 is read from it. `pcv report features` also needs 
 - `src/pcv/synth.py`, `evaluate.py`: synthetic panels with a known edge; daily rank IC and out-of-fold scoring.
 - `src/pcv/reports.py`, `plots.py`, `site.py`: report numbers and charts, chart style, the lab page.
 - Conventions: a row's label covers days day+1 to day+h; rules are chosen on data up to Dec 2022 and
-  checked once on Jan 2023 – Nov 2025; the reference model's last 365 days (from 27 Nov 2025) are never read.
+  checked once on Jan 2023 – Nov 2025; the last 365 days (from 27 Nov 2025) are never read, kept as a sealed holdout.
 - Data: NSE daily bhavcopy archive, local only.
 - Charts: every chart is a PNG plus an animated GIF made by `pcv report`.
 

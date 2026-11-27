@@ -1,12 +1,12 @@
 """The local NSE bhavcopy lake (PCV_LAKE_DIR), read with a date filter so nothing after LAST_DAY
-is ever loaded: the reference model keeps the last 365 days before its latest data as a sealed holdout."""
+is ever loaded: the last 365 days before the latest data stay a sealed holdout."""
 
 import os
 from pathlib import Path
 
 import pandas as pd
 
-LAST_DAY = "2025-11-26"  # the reference model's holdout starts the day after
+LAST_DAY = "2025-11-26"  # the sealed holdout starts the day after
 PICK_END = "2022-12-31"  # every rule is chosen on data up to here; 2023 on is checked once
 START = "2013-01-01"
 

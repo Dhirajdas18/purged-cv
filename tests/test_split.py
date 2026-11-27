@@ -73,7 +73,7 @@ def test_walkforward_train_ends_purge_plus_embargo_before_test():
     first = min(d[sp[0][1]])
     assert max(d[sp[0][0]]) == first - 5  # its label ends on the day before the test labels start
     sp6 = list(WalkForward(5, h=5, embargo=6).split(None, groups=d))
-    assert max(d[sp6[0][0]]) == first - 11  # the reference model's cut: train dates < day[first - (h + 5)]
+    assert max(d[sp6[0][0]]) == first - 11  # the reference cut: train dates < day[first - (h + 5)]
     assert all(max(d[tr]) < min(d[te]) for tr, te in sp6)
 
 

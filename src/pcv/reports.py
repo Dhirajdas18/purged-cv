@@ -73,7 +73,8 @@ def report_splits(out_dir: Path) -> dict:
             f"purge drops {lost[h][0]:.1%} of the training days plain k-fold uses (rows whose "
             f"labels overlap the test labels), purge + 5-day embargo {lost[h][1]:.1%}; "
             f"walk-forward trains "
-            f"on {np.mean(w0):.0f} days with an exact purge and {np.mean(w6):.0f} with the reference model's "
+            f"on {np.mean(w0):.0f} days with an exact purge and {np.mean(w6):.0f} with the "
+            f"reference model's "
             f"h + 5 cut")
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.6), gridspec_kw={"width_ratios": [1.5, 1]})
@@ -208,7 +209,7 @@ CHECK_END = "2025-08-01"  # rows whose 63-day labels are complete inside the dat
 
 
 def lake_models():
-    """The reference model's two models: Ridge on gaps filled with 0, LightGBM on gaps as they are."""
+    """The reference model's two models: Ridge on gaps filled with 0, LightGBM on gaps as is."""
     from lightgbm import LGBMRegressor
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import Ridge
@@ -262,7 +263,7 @@ def features_chart(rows: list[dict], out_dir: Path) -> None:
     ax.axhline(0, color=plots.TEXT, lw=1)
     ax.set_xticks(x, [f"{h}-day labels" for h in HORIZONS])
     ax.set_ylabel("mean daily rank IC")
-    ax.set_title("the reference model's slow features on NSE stocks, scored 2016-2022", loc="left")
+    ax.set_title("Reference model features on NSE stocks, scored 2016-2022", loc="left")
     ax.set_ylim(0, max(max(r["purged"], r["walk"]) for r in rows) * 1.35)
     ax.legend(frameon=False, ncol=3, loc="upper left")
     ax.grid(axis="x", visible=False)
@@ -270,8 +271,9 @@ def features_chart(rows: list[dict], out_dir: Path) -> None:
 
 
 def report_features(out_dir: Path) -> dict:
-    """The reference model's slow features and labels rebuilt from the lake and matched against its own
-    features.parquet; then a baseline for Ridge and LightGBM on data up to Dec 2022."""
+    """The reference model's slow features and labels rebuilt from the lake and matched against
+    the original implementation's features.parquet; then a baseline for Ridge and LightGBM on
+    data up to Dec 2022."""
     import os
 
     import pandas as pd
@@ -285,13 +287,13 @@ def report_features(out_dir: Path) -> dict:
     res = {"table": f"{len(f):,} universe rows, {f['date'].min():%d %b %Y} - "
                     f"{f['date'].max():%d %b %Y}, {f['symbol'].nunique()} stocks"}
     cols = FEAT_A + [f"xs_{h}" for h in HORIZONS] + [f"y_{h}" for h in HORIZONS]
-    q = pd.read_parquet(os.environ["PCV_QL_FEATURES"], columns=["date", "symbol"] + cols,
+    q = pd.read_parquet(os.environ["PCV_REF_FEATURES"], columns=["date", "symbol"] + cols,
                         filters=[("date", "<=", pd.Timestamp(CHECK_END))])
     m = f[f["date"] <= CHECK_END].merge(q, on=["date", "symbol"], suffixes=("", "_q"))
     worst = max(float((m[c].astype(float) - m[c + "_q"].astype(float)).abs().max())
                 for c in cols)
     nan_diff = max(float((m[c].isna() != m[c + "_q"].isna()).mean()) for c in cols)
-    res["port check against the reference model's features.parquet"] = (
+    res["port check against the original features.parquet"] = (
         f"{len(m):,} shared rows of {int((f['date'] <= CHECK_END).sum()):,} (to {CHECK_END}), "
         f"{len(cols)} columns: largest gap {worst:.1e}, missing-value mismatch {nan_diff:.2%}")
 
@@ -305,7 +307,7 @@ def report_features(out_dir: Path) -> dict:
             wf = cv_score(mk, p, BlockWalkForward(starts, h, 6))
             rows.append({"h": h, "model": mname, "purged": pk, "walk": wf})
             res[f"h = {h}, {mname}"] = (f"IC on Jan 2016 - Dec 2022: purged 5-fold {pk:+.4f}; "
-                                        f"reference-style walk-forward (6-month blocks, embargo 6) "
+                                        f"reference walk-forward (6-month blocks, embargo 6) "
                                         f"{wf:+.4f}")
 
     features_chart(rows, out_dir)
@@ -544,7 +546,7 @@ def report_sizing(out_dir: Path) -> dict:
                 f"{max(w[g] for g in w if g >= h):+.4f}")
     qok = all(r["t"] < 2 for r in rows
               if r["kind"] == "walk-forward" and r["setting"] == r["h"] + 6)
-    res["the reference model's gap (h + 6 days before the test block)"] = (
+    res["reference gap (h + 6 days before the test block)"] = (
         "not detectably above the widest gap for every label length and model" if qok
         else "detectably above the widest gap somewhere: see the lines above")
     sizing_chart(rows, out_dir)
@@ -569,7 +571,7 @@ def sizing_chart(rows: list[dict], out_dir: Path) -> None:
         ax.set_xlabel("gap before test (trading days)")
     axes[0].set_ylabel("walk-forward IC, 2016-2022")
     axes[0].legend(frameon=False)
-    fig.text(0.99, 0.01, "dashed: the reference model's gap (h + 6)", ha="right", color=plots.TEXT_2,
+    fig.text(0.99, 0.01, "dashed: reference gap (h + 6)", ha="right", color=plots.TEXT_2,
              fontsize=9)
     fig.subplots_adjust(wspace=0.12, bottom=0.18)
     plots.save(fig, out_dir, "sizing")

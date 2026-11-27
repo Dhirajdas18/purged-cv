@@ -86,7 +86,7 @@ fresh data from the same process. Average of 10 panels.</p>
 })();
 </script>
 <h3 id="baseline">On real NSE stocks: two ways of testing, same days</h3>
-<p class="note">The reference model's ten slow stock features, rebuilt from the archive and matched to the reference model's own
+<p class="note">The reference model's ten slow stock features, rebuilt from the archive and matched to the original's
 values row for row, scored Jan 2016 – Dec 2022 (mean daily rank IC). Purged 5-fold trains on data from both
 sides of each test block; walk-forward trains only on the past, retraining every 6 months as the reference model does.
 Which of the two predicts the real later score is the next test.</p>
@@ -128,7 +128,7 @@ each method's favourite model per label length.</p>
 day and the test block varied. “No gap minus gap h” is what training right up to the test adds to the score: the
 leak. The reference model leaves h + 6 days.</p>
 <div class="table-scroll"><table class="data" id="s-table">
-  <thead><tr><th scope="col">Label length</th><th scope="col">Model</th><th scope="col">IC, no gap</th><th scope="col">IC, gap h</th><th scope="col">IC, the reference model's gap</th><th scope="col">No gap minus gap h</th></tr></thead>
+  <thead><tr><th scope="col">Label length</th><th scope="col">Model</th><th scope="col">IC, no gap</th><th scope="col">IC, gap h</th><th scope="col">IC, reference gap</th><th scope="col">No gap minus gap h</th></tr></thead>
   <tbody></tbody>
 </table></div>
 <script>
