@@ -57,3 +57,25 @@ def test_cv_daily_series_mean_equals_score():
     mk = lambda: Ridge(alpha=1.0)  # noqa: E731
     s = cv_daily(mk, p, PurgedKFold(5, h=5))
     assert abs(s.mean() - cv_score(mk, p, PurgedKFold(5, h=5))) < 1e-12
+
+
+def test_cpcv_paths_mean_equals_cv_score():
+    from sklearn.linear_model import Ridge
+
+    from pcv.evaluate import cpcv_paths
+    from pcv.split import CombinatorialPurged
+
+    p = panel(20, 300, h=5, edge=0.2, seed=4)
+    mk = lambda: Ridge(alpha=1.0)  # noqa: E731
+    cv = CombinatorialPurged(6, 2, h=5)
+    paths = cpcv_paths(mk, p, cv)
+    assert len(paths) == 5
+    assert abs(np.mean(paths) - cv_score(mk, p, cv)) < 1e-12
+
+
+def test_expected_max_matches_simulation():
+    from pcv.evaluate import expected_max
+
+    assert expected_max(1) == 0
+    sim = np.random.default_rng(0).standard_normal((20000, 12)).max(axis=1).mean()
+    assert abs(expected_max(12) - sim) / sim < 0.03

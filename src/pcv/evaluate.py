@@ -57,15 +57,42 @@ def cv_score(make_model, p, splitter, from_day: int | None = None) -> float:
         for out in preds:  # each row is tested at most once (walk-forward: some never)
             joined = np.where(np.isnan(joined), out, joined)
         return daily_ic(joined[keep], p.y[keep], p.day[keep])
+    return float(np.mean(_path_ics(preds, p, splitter, keep)))
+
+
+def _path_ics(preds, p, splitter, keep) -> list[float]:
     blocks = np.array_split(np.unique(p.day), splitter.n_groups)
     group = np.searchsorted([b[0] for b in blocks], p.day, side="right") - 1
-    ics = []
+    out = []
     for path in splitter.paths():
         joined = np.choose(group, [preds[s] for s in path])
-        ics.append(daily_ic(joined[keep], p.y[keep], p.day[keep]))
-    return float(np.mean(ics))
+        out.append(daily_ic(joined[keep], p.y[keep], p.day[keep]))
+    return out
+
+
+def cpcv_paths(make_model, p, splitter, from_day: int | None = None) -> list[float]:
+    """IC of each combinatorial purged CV backtest path."""
+    preds = []
+    for tr, te in splitter.split(p.X, p.y, groups=p.day):
+        out = np.full(len(p.y), np.nan)
+        out[te] = make_model().fit(p.X[tr], p.y[tr]).predict(p.X[te])
+        preds.append(out)
+    keep = np.ones(len(p.y), bool) if from_day is None else p.day >= from_day
+    return _path_ics(preds, p, splitter, keep)
 
 
 def true_score(make_model, p, fresh) -> float:
     """Train on the whole panel, score on a fresh panel from the same process."""
     return daily_ic(make_model().fit(p.X, p.y).predict(fresh.X), fresh.y, fresh.day)
+
+
+def expected_max(n: float) -> float:
+    """Expected best of n independent standard normals (Bailey and Lopez de Prado), as in
+    backtest-engine's forecast."""
+    from math import e
+    from statistics import NormalDist
+
+    if n <= 1:
+        return 0.0
+    z, g = NormalDist().inv_cdf, 0.5772156649
+    return (1 - g) * z(1 - 1 / n) + g * z(1 - 1 / (n * e))

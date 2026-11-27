@@ -575,5 +575,92 @@ def sizing_chart(rows: list[dict], out_dir: Path) -> None:
     plots.save(fig, out_dir, "sizing")
 
 
+def report_paths(out_dir: Path) -> dict:
+    """Combinatorial purged CV as a spread: 7 paths per model (8 groups, 2 tested), on data to
+    Dec 2022; checked against topic 4's real 2023 - Nov 2025 scores (measures in plan-topic6)."""
+    from math import sqrt
+
+    import pandas as pd
+
+    from pcv.data import PICK_END, calendar
+    from pcv.evaluate import cpcv_paths
+    from pcv.split import CombinatorialPurged
+
+    f = lake_table()
+    cal = calendar()
+    first = int(np.searchsorted(cal, pd.Timestamp("2016-01-01")))
+    cache = Path("out/paths.json")
+    paths = json.loads(cache.read_text()) if cache.exists() else {}
+    for v in variants():
+        if v["name"] not in paths:
+            p = _variant_panel(f, v, cal, hi=PICK_END)
+            cv = CombinatorialPurged(8, 2, v["h"], v["h"])
+            paths[v["name"]] = cpcv_paths(make_variant(v), p, cv, from_day=first)
+            cache.write_text(json.dumps(paths))
+    chk = json.loads(CHECK.read_text())["real"]
+    cvd = json.loads((DATA / "check.json").read_text())["cv"]
+    names = [v["name"] for v in variants()]
+    P = np.array([paths[n] for n in names])
+    real = np.array([chk[n] for n in names])
+    mean, sd = P.mean(1), P.std(1, ddof=1)
+    in_range = (real >= P.min(1)) & (real <= P.max(1))
+    in_2sd = np.abs(real - mean) <= 2 * sd
+    rho = pd.Series(sd).rank().corr(pd.Series(np.abs(real - mean)).rank())
+    res = {"paths": f"7 per model, 48 models; path sd median {np.median(sd):.4f} (range "
+                    f"{sd.min():.4f} to {sd.max():.4f}); mean real minus path mean "
+                    f"{(real - mean).mean():+.4f}",
+           "real score inside the model's path range": f"{in_range.sum()} of 48",
+           "real score inside path mean ± 2 sd": f"{in_2sd.sum()} of 48",
+           "rank correlation of path sd with |real - path mean|": f"{rho:.2f}"}
+
+    from pcv.evaluate import expected_max
+
+    picks = []
+    hz = np.array([v["h"] for v in variants()])
+    for h in sorted(set(hz)):
+        idx = np.flatnonzero(hz == h)
+        k = idx[np.argmax(mean[idx])]
+        c = np.corrcoef(P[idx])
+        r_ = float(c[~np.eye(len(idx), dtype=bool)].mean())
+        cut = sqrt(max(1 - r_, 0)) * sd[k] / sqrt(P.shape[1]) * expected_max(len(idx))
+        wf = cvd[names[k]]["walk-forward"]
+        picks.append({"h": int(h), "pick": names[k], "naive": float(mean[k]),
+                      "forecast": float(mean[k] - cut), "haircut": float(cut),
+                      "walk": float(wf), "real": float(real[k]), "corr": r_})
+        res[f"h = {h} pick {names[k]}"] = (
+            f"path mean {mean[k]:+.4f}, haircut {cut:.4f} (variant path correlation {r_:.2f}) -> "
+            f"forecast {mean[k] - cut:+.4f}; walk-forward {wf:+.4f}; real {real[k]:+.4f}")
+    err = {k: float(np.mean([abs(p_[k] - p_["real"]) for p_ in picks]))
+           for k in ("naive", "forecast", "walk")}
+    res["mean |forecast - real| over the 4 picks"] = (
+        f"naive pick {err['naive']:.4f}, after haircut {err['forecast']:.4f}, walk-forward "
+        f"{err['walk']:.4f}")
+    paths_chart(names, P, real, out_dir)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "paths.json").write_text(json.dumps({"names": names, "paths": P.tolist(),
+                                                 "real": real.tolist(), "picks": picks}))
+    return res
+
+
+def paths_chart(names, P, real, out_dir: Path) -> None:
+    """Each model's 7 path scores (range bar) against its real later score (dot)."""
+    order = np.argsort(P.mean(1))
+    fig, ax = plt.subplots(figsize=(12, 4.6))
+    x = np.arange(len(names))
+    ax.vlines(x, P[order].min(1), P[order].max(1), color=plots.SERIES[0], lw=3, alpha=0.5,
+              label="7 path scores, 2016-2022 (range)")
+    ax.scatter(x, P[order].mean(1), s=14, color=plots.SERIES[0], label="path mean")
+    ax.scatter(x, real[order], s=22, color=plots.SERIES[1], zorder=3,
+               label="real score, Jan 2023 - Nov 2025")
+    ax.axhline(0, color=plots.TEXT, lw=1)
+    ax.set_xticks([])
+    ax.set_xlabel("48 models, sorted by path mean")
+    ax.set_ylabel("mean daily rank IC")
+    ax.set_title("Combinatorial purged CV: the spread of 7 paths against the real later score",
+                 loc="left")
+    ax.legend(frameon=False, loc="upper left")
+    plots.save(fig, out_dir, "paths")
+
+
 REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features,
-           "check": report_check, "sizing": report_sizing}
+           "check": report_check, "sizing": report_sizing, "paths": report_paths}
