@@ -19,7 +19,7 @@ method, a label length and an embargo, and see which trading days each split tra
 - [x] Which cross-validation score predicts the score a model really gets later
 - [x] How big the purge and embargo need to be, by label length
 - [x] Combinatorial purged CV: a spread of out-of-sample results instead of one number
-- [x] One check on Jan 2023 – Nov 2025, after every rule is fixed on earlier data
+- [x] What to use: the rules that held up, after one check on Jan 2023 – Nov 2025
 
 ## Findings
 
@@ -172,11 +172,35 @@ a haircut for picking the best of 12: the expected best of 12 normal draws × th
   against a forecast of +0.0459; the best 63-day model (ridge, alpha 100) made +0.0121 against +0.0496.
   The 1-day pick held up (+0.0605 against +0.0587).
 
+### 7. What to use: split by day, leave h days, forecast with walk-forward and expect less
+
+<a href="docs/img/verdict.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/verdict.png"><img src="docs/img/verdict.gif" alt="For the best-path model at each label length, its combinatorial-path and walk-forward scores for 2016-2022 against its real score for Jan 2023 to Nov 2025" width="720"></picture></a>
+
+The rules findings 1–6 support for a stock model whose labels look h days ahead, each with the numbers
+behind it (`pcv report verdict` reads the saved results; nothing is recomputed). The chart follows the
+best model by combinatorial paths at each label length from its 2016 – 2022 scores to what it really made
+in Jan 2023 – Nov 2025. One three-year window decides the forecast rule, so treat its size as a guide.
+
+- **Split by blocks of days; never shuffle rows.** On synthetic stocks with no true edge, shuffled k-fold
+  let boosted trees score +0.274 too high with 21-day labels, against +0.009 for day blocks and +0.001
+  purged; on real data it ranked the 48 models against their later scores at −0.13.
+- **Leave h trading days before each test block; more adds nothing.** 63-day LightGBM under walk-forward
+  scored +0.0644 with a 1-day gap, +0.0394 with a gap of h and +0.0394 to +0.0415 from h to 3h. A few
+  extra days, as in the reference model's h + 6, cost little.
+- **Forecast with walk-forward, and expect less.** Over the 48 models walk-forward scored +0.0346 on
+  2016 – 2022, purged 5-fold +0.0392; the real 2023 – 2025 average was +0.0202 (misses 0.0164 and
+  0.0202).
+- **Rank models by walk-forward or by purged k-fold with an h-day embargo.** Their rank correlations with
+  the real scores were 0.71 and 0.65 (purged alone 0.63). Purged k-fold's 4 picks did slightly better
+  (+0.0313 against +0.0275 for walk-forward), too few to test.
+- **Read combinatorial paths as a fragility signal, not a range.** The real score fell inside a model's
+  7-path range for 2 of 48 models; long-label models fell furthest.
+
 ## Quick start
 
 ```bash
 uv sync
-PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check, sizing, paths
+PCV_LAKE_DIR=/path/to/lake uv run pcv report splits   # topics: splits, leak, features, check, sizing, paths, verdict
 uv run python scripts/build_site.py                    # site/index.html from docs/data
 uv run pytest
 ```

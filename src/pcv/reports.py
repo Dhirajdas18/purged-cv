@@ -677,5 +677,64 @@ def paths_chart(names, P, real, out_dir: Path) -> None:
     plots.save(fig, out_dir, "paths")
 
 
+def report_verdict(out_dir: Path) -> dict:
+    """What to use: the rules the findings support, with the numbers behind each, read from the
+    saved results of the other reports (nothing is recomputed)."""
+    leak = json.loads((DATA / "leak.json").read_text())
+    chk = json.loads((DATA / "check.json").read_text())
+    siz = json.loads((DATA / "sizing.json").read_text())
+    pth = json.loads((DATA / "paths.json").read_text())
+    g = {r["method"]: r["gap"] for r in leak
+         if r["case"] == "base" and r["h"] == 21 and r["edge"] == 0.0
+         and r["model"] == "boosted trees"}
+    m = {r["method"]: r for r in chk["rows"]}
+    real = float(np.mean(list(chk["real"].values())))
+    w = {r["setting"]: r["ic"] for r in siz
+         if r["h"] == 63 and r["model"] == "lightgbm" and r["kind"] == "walk-forward"}
+    P, R = np.array(pth["paths"]), np.array(pth["real"])
+    inside = int(((R >= P.min(1)) & (R <= P.max(1))).sum())
+    res = {
+        "1. split by blocks of days, never shuffle rows": (
+            f"synthetic, no true edge, 21-day labels, boosted trees: shuffled k-fold off by "
+            f"{g['shuffled k-fold']:+.3f}, day blocks {g['k-fold, no purge']:+.3f}, purged "
+            f"{g['purged']:+.3f}; on real data shuffled ranked 48 models at "
+            f"{m['shuffled k-fold']['rho']:+.2f} against their later scores"),
+        "2. leave h trading days before each test block; more adds nothing": (
+            f"63-day LightGBM walk-forward IC with a 1-day gap {w[1]:+.4f}, gap h {w[63]:+.4f}, "
+            f"gap h to 3h {min(w[k] for k in w if k >= 63):+.4f} .. "
+            f"{max(w[k] for k in w if k >= 63):+.4f}"),
+        "3. forecast with walk-forward, and expect less": (
+            f"48 models, 2016-2022 scores vs real Jan 2023 - Nov 2025 ({real:+.4f}): walk-forward "
+            f"{m['walk-forward']['cv_mean']:+.4f} (miss {m['walk-forward']['abs_gap']:.4f}), "
+            f"purged {m['purged']['cv_mean']:+.4f} (miss {m['purged']['abs_gap']:.4f}); one "
+            "three-year window"),
+        "4. rank models by walk-forward or purged + embargo": (
+            f"rank correlation with the real scores: walk-forward "
+            f"{m['walk-forward']['rho']:.2f}, purged + embargo {m['purged + embargo']['rho']:.2f}, "
+            f"purged {m['purged']['rho']:.2f}; real IC of the picks (4 picks, untested): purged "
+            f"{m['purged']['picked_real']:+.4f}, walk-forward "
+            f"{m['walk-forward']['picked_real']:+.4f}"),
+        "5. read combinatorial paths as fragility, not a range": (
+            f"real score inside its 7-path range for {inside} of {len(R)} models"),
+    }
+    picks = pth["picks"]
+    fig, ax = plt.subplots(figsize=(9, 4.6))
+    x = np.arange(len(picks))
+    for k, (key, lab, col) in enumerate([("naive", "combinatorial paths, 2016-2022",
+                                          plots.MUTED),
+                                         ("walk", "walk-forward, 2016-2022", plots.SERIES[0]),
+                                         ("real", "real, Jan 2023 - Nov 2025", plots.SERIES[1])]):
+        ax.bar(x + (k - 1) * 0.27, [p_[key] for p_ in picks], 0.25, color=col, label=lab)
+    ax.axhline(0, color=plots.TEXT, lw=1)
+    ax.set_xticks(x, [f"{p_['h']}-day labels" for p_ in picks])
+    ax.set_ylabel("mean daily rank IC")
+    ax.set_title("Best-path model per label length: earlier scores vs what happened", loc="left")
+    ax.legend(frameon=False)
+    ax.grid(axis="x", visible=False)
+    plots.save(fig, out_dir, "verdict")
+    return res
+
+
 REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features,
-           "check": report_check, "sizing": report_sizing, "paths": report_paths}
+           "check": report_check, "sizing": report_sizing, "paths": report_paths,
+           "verdict": report_verdict}
