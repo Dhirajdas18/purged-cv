@@ -55,119 +55,122 @@ same model really gets on a fresh panel from the same process, 10 panels per cas
 gradient-boosted trees; note the two charts' different scales.
 
 - **Shuffling rows is the leak.** With no true edge, boosted trees scored an IC of +0.161 (5-day labels)
-  and +0.277 (21-day) under shuffled k-fold, against a true score of about 0. Ridge, which can't
-  memorise, was off by much less (+0.016 and +0.037).
+  and +0.277 (21-day) under shuffled k-fold, against a true score of about 0. Ridge was off by much less (+0.016 and +0.037).
 - **Splitting by day did almost all the work.** Plain k-fold over blocks of days, with no purge, was off
-  by +0.012 (5-day) and +0.009 (21-day) for the trees. Purging closed the 21-day gap to +0.001 and left
-  the 5-day gap at +0.011.
+  by +0.012 (5-day) and +0.009 (21-day) for the trees. Purging moved the 21-day gap to +0.001 and left the
+  5-day gap at +0.011; both changes are within about one standard error (0.007).
 - **The embargo changed nothing in these cases.** Purged with and without a 21-day embargo differed by
   0.003 or less everywhere, including a case with momentum in returns, which moved no result by more
   than 0.002.
 - **Walk-forward is the most cautious.** With a small true edge and 21-day labels it scored 0.016
-  (trees) and 0.018 (ridge) below the truth, training on half the data on average; combinatorial purged
-  CV was 0.010–0.011 below.
-- **When the edge flips sign halfway, every method misjudges it.** For ridge, purged k-fold scored
-  −0.049 below a true score near 0 and combinatorial purged −0.033; walk-forward came closest at −0.017.
+  (trees) and 0.018 (ridge) below the truth; combinatorial purged CV was 0.010–0.011 below.
+- **When the edge flips sign halfway, ridge's scores go wrong.** Purged k-fold scored −0.049 below a
+  true score near 0 and combinatorial purged −0.033; walk-forward came closest at −0.017. For the
+  trees every honest method stayed within 0.012 of the truth.
 
 ### 3. The reference model's features rebuilt exactly; walk-forward scores them lower than purged k-fold
 
 <a href="docs/img/features.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/features.png"><img src="docs/img/features.gif" alt="Mean daily rank IC of the reference model's slow features by label length, ridge and LightGBM, purged five-fold against walk-forward" width="720"></picture></a>
 
-The reference model's ten slow stock features (momentum over 1, 6 and 12 months, distance from the 50- and 200-day
-averages, 20- and 252-day volatility, 60-day beta and idiosyncratic volatility against NIFTY, 63-day
-turnover) and its labels were rebuilt from the archive with the same formulas: universe rows only, each
-feature clipped at the 1st and 99th percentile and ranked across stocks each day. Then Ridge and LightGBM
-(the reference settings, on these features only; the reference LightGBM also sees market-wide features) were
-scored on the rule-picking data, Jan 2016 – Dec 2022, as mean daily rank IC, by purged 5-fold and by
-the reference model's walk-forward (retrained every 6 months, training ending h + 6 days before each block).
+The reference model's ten slow stock features (momentum over 1, 6 and 12 months, distance from the 50- and
+200-day averages, 20- and 252-day volatility, 60-day beta and idiosyncratic volatility against NIFTY,
+63-day turnover) and its labels were rebuilt from the archive with the same formulas: universe rows only,
+each feature clipped at the 1st and 99th percentile and ranked across stocks each day. Ridge and LightGBM
+(the reference settings, on these features only; the reference LightGBM also sees market-wide features)
+were scored on rows whose labels end by Dec 2022, Jan 2016 – Dec 2022, as mean daily rank IC, by purged
+5-fold and by the reference model's walk-forward (retrained every 6 months, training ending h + 6 days
+before each block).
 
 - **The rebuild matches the original row for row.** All 570,800 shared rows up to Aug 2025 and all 18
   feature and label columns agree, largest gap 0.0, no mismatch in missing values.
-- **The features carry a steady signal.** Ridge: IC +0.056 (1-day labels), +0.043 (5-day), +0.048
-  (21-day), +0.048 (63-day) under purged 5-fold.
-- **Walk-forward scored lower in 7 of 8 cases,** most for LightGBM on 21-day labels (+0.028 against
-  +0.041). Walk-forward trains only on the past, so on these days its models saw less data.
-- **Ridge matched or beat LightGBM at every label length,** by 0.000 to 0.007 under purged 5-fold.
-- **Which score to believe is still open.** The synthetic panels (finding 2) had walk-forward slightly
-  below the truth; the next finding checks both against what the models really scored later.
+- **The features carry a steady signal.** Ridge: IC +0.056 (1-day labels), +0.044 (5-day), +0.049
+  (21-day), +0.056 (63-day) under purged 5-fold.
+- **Walk-forward scored lower in all 8 cases,** by 0.0014 (ridge, 1-day) to 0.0128 (LightGBM, 21-day:
+  +0.0288 against +0.0416).
+- **Ridge matched or beat LightGBM at every label length but one** (1-day: LightGBM +0.0569, ridge
+  +0.0564).
+- **Which score to believe is still open.** The next finding checks both against what the models really
+  scored later.
 
-### 4. Every honest method overstated the next three years; walk-forward missed least, purging picked best
+### 4. Every honest method overstated the next three years; walk-forward came closest
 
 <a href="docs/img/check.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/check.png"><img src="docs/img/check.gif" alt="Cross-validation IC against real later IC for 48 models under purged and walk-forward splits, and the average miss of six methods" width="720"></picture></a>
 
 48 model variants were fixed in advance (`plan-topic4`, committed before any later data was scored): label
 length 1, 5, 21 or 63 days × all ten features, the five trend features or the five risk features × ridge
-(alpha 1 or 100) or LightGBM (7 or 31 leaves). Each method scored every variant on data up to Dec 2022
-(days from 2016, the same for all). Then each variant, trained on every row whose label ended by Dec 2022,
-was scored once on Jan 2023 – Nov 2025; those real scores are saved in `runs/check.json` and never
-recomputed. Comparisons between methods are paired over the 48 variants, which share label lengths and
-data, so the t values are rough.
+(alpha 1 or 100) or LightGBM (7 or 31 leaves). Each method scored every variant on rows whose labels end
+by Dec 2022 (days from 2016, the same for all). Then each variant, trained on the same rows, was scored
+once on Jan 2023 – Nov 2025; those real scores are saved in `runs/check.json` and never recomputed. The
+48 variants share data, label lengths and features, so the paired t values below treat dependent cases
+as independent and overstate how sure the differences are.
 
 - **The next three years were weaker than any honest method expected.** The 48 models made a real IC of
-  +0.020 on average; purged 5-fold had scored them at +0.037, walk-forward +0.034, combinatorial purged
-  +0.036. Every honest method overstated the future by 0.014–0.017.
+  +0.020 on average; purged 5-fold had scored them at +0.039, walk-forward +0.035, combinatorial purged
+  +0.036. Every honest method overstated the future, by 0.014 to 0.019 on average.
 - **Shuffled k-fold was useless.** It scored the models at +0.081 on average, missed by 0.062, and ranked
-  them the wrong way round (rank correlation with the real scores −0.15).
-- **On real data the purge mattered, and so did the embargo.** Plain 5-fold over day blocks missed by
-  0.0202, purged 5-fold by 0.0185 (t +4.57 for the difference), purged with an h-day embargo by 0.0180
-  (t −2.37 against purged alone).
-- **Walk-forward missed least (0.0161, t −3.95 against purged), but purged k-fold picked better.** Taking
-  each method's favourite model per label length, purged 5-fold (with or without the embargo) chose models
-  that really made +0.0313, against +0.0275 for walk-forward and +0.0270 for combinatorial purged; the best
-  possible was +0.0333. Purged 5-fold also ranked the models most like reality (0.64; 0.66 with the
-  embargo).
+  them slightly the wrong way round (rank correlation with the real scores −0.13).
+- **Walk-forward came closest and ranked best.** Its average miss was 0.0164 (purged 5-fold 0.0202, t
+  −5.55) and its rank correlation with the real scores 0.71 (purged 0.63). It also scored lowest of the
+  honest methods, so part of its lead is simply that every score was too high.
+- **Purging and the embargo both shrank the miss.** Plain 5-fold over day blocks missed by 0.0218,
+  purged by 0.0202 (t +2.83 for the difference), purged with an h-day embargo by 0.0194 (t −3.61 against
+  purged alone).
+- **The picks tell a different story, on too few cases to test.** Each method's favourite model per
+  label length (4 picks) really made +0.0313 for purged 5-fold, with or without the embargo, against
+  +0.0275 for walk-forward and +0.0270 for combinatorial purged; the best possible was +0.0333.
 
-### 5. The reference model's gap is enough: training up to the test added up to 0.025 IC, wider gaps added nothing
+### 5. The reference model's gap is enough; training up to the day before the test added up to 0.025 IC
 
 <a href="docs/img/sizing.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/sizing.png"><img src="docs/img/sizing.gif" alt="Walk-forward IC against the gap before the test block, for 1-, 5-, 21- and 63-day labels, ridge and LightGBM" width="720"></picture></a>
 
-On data to Dec 2022 only (the 2023 – 2025 results of finding 4 were not used), ridge and LightGBM on all ten
-features were scored by the reference model's walk-forward with the gap before each test block set to 0, h,
-h + 6 (the reference model's), 2h and 3h days, and by purged 5-fold with purges of 0, h/2 and h days and embargoes
-of 0, 6, h and 2h. The decision rule was written down before the run (`plan-topic5`): the needed size is
-the smallest setting whose daily IC is not detectably above the widest setting's (paired t below 2, with
-the reference model's √(days / h) correction for overlapping labels).
+On rows whose labels end by Dec 2022 only (the 2023 – 2025 results of finding 4 were not used), ridge and
+LightGBM on all ten features were scored by the reference model's walk-forward with training ending 1, h,
+h + 6 (the reference model's), 2h and 3h days before each test block, and by purged 5-fold with purges
+of 0, h/2 and h days and embargoes of 0, 6, h and 2h. The decision rule was written down before the run
+(`plan-topic5`): the needed size is the smallest setting whose daily IC is not detectably above the
+widest setting's (3h for walk-forward, purge h with a 2h embargo for k-fold), with a paired t below 2
+using the reference model's √(days / h) correction for overlapping labels.
 
-- **Training right up to the test inflated the score, most for long labels and trees.** Walk-forward IC
-  with no gap minus IC with a gap of h: LightGBM +0.0250 (63-day labels), +0.0098 (21-day), +0.0025
-  (5-day), +0.0013 (1-day); ridge +0.0066, +0.0013, +0.0003, +0.0001.
-- **Beyond a gap of h, nothing changed.** From h up to 3h, walk-forward IC stayed between +0.0399 and
-  +0.0420 for 63-day LightGBM and between +0.0282 and +0.0307 for 21-day LightGBM.
-- **The reference model's h + 6 sits on that flat part,** so it removes the overlap and costs at most 6 extra days.
-  It is enough; an exact gap of h would do as well.
-- **The fixed rule could not prove any of it.** No gap was detectably above the widest one (largest t
-  1.6 for 63-day LightGBM), so by the rule a gap of 0 was "enough" for every walk-forward case. Eight
-  years of noisy daily IC cannot confirm a leak of this size; the 48-model check in finding 4, which
-  compared methods across many models, could (purge t +4.57).
-- **The k-fold reference was a poor choice.** A 2h embargo throws away so much training data (126 days on
-  each side for 63-day labels) that it scored lowest for that reason alone (ridge +0.0355 against
-  +0.0480 with the purge only), so k-fold sizes from this rule mean little.
+- **Training up to the day before the test raised the score, most for long labels and trees.**
+  Walk-forward IC with a 1-day gap minus IC with a gap of h: LightGBM +0.0250 (63-day labels), +0.0085
+  (21-day), +0.0007 (5-day), +0.0000 (1-day); ridge +0.0063, +0.0010, +0.0002, +0.0000.
+- **Beyond a gap of h, nothing changed.** From h up to the widest gap, walk-forward IC stayed between
+  +0.0394 and +0.0415 for 63-day LightGBM and between +0.0288 and +0.0314 for 21-day LightGBM.
+- **The reference model's h + 6 sits on that flat part,** costing at most 6 more days than an exact gap
+  of h, which would do as well.
+- **The fixed rule could not prove the rise.** No walk-forward setting was detectably above the widest
+  one, so by the rule a 1-day gap was "enough" everywhere; eight years of one model's noisy daily IC
+  cannot confirm a difference of this size. The +0.025 is an estimate, not a tested result.
+- **The k-fold reference was a poor choice.** With a 2h embargo after each test block, it scored lowest
+  (63-day ridge +0.0507 against +0.0558 with the purge only), so the k-fold sizes from this rule mean
+  little.
 
 ### 6. Seven paths agreed with each other, not with the next three years
 
 <a href="docs/img/paths.png"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/img/paths.png"><img src="docs/img/paths.gif" alt="Range of seven combinatorial purged CV path scores for 48 models against each model's real later score" width="720"></picture></a>
 
-Combinatorial purged CV on data to Dec 2022: the days are cut into 8 groups, every choice of 2 is a test
-set (28 splits, purged and embargoed by h days), and the test pieces join into 7 complete backtest
-paths, each scored on 2016 – 2022. The 48 models of finding 4, checked against the real Jan 2023 – Nov
-2025 scores saved there (a second look at that window; nothing here was tuned on it). The measures were
-written down before the run (`plan-topic6`). For each label length, the best model's forecast takes a
-haircut for picking the best of 12: the expected best of 12 normal draws × the path standard error ×
+Combinatorial purged CV on rows whose labels end by Dec 2022: the days are cut into 8 groups, every choice
+of 2 is a test set (28 splits, purged and embargoed by h days), and the test pieces join into 7 complete
+backtest paths, each scored on 2016 – 2022. The 48 models of finding 4, checked against the real Jan 2023
+– Nov 2025 scores saved there (a second look at that window; nothing here was tuned on it). The measures
+were written down before the run (`plan-topic6`). For each label length, the best model's forecast takes
+a haircut for picking the best of 12: the expected best of 12 normal draws × the path standard error ×
 √(1 − the models' average path correlation).
 
-- **The paths barely disagree.** The median standard deviation across a model's 7 paths was 0.0022 IC;
-  they score the same days with heavily shared training data.
-- **So their spread is no forecast range.** The real score fell inside the model's path range for 3 of
-  48 models, and inside path mean ± 2 standard deviations for 3; on average the real score was 0.0163
-  below the path mean.
-- **But a wider spread did warn of a bigger miss.** Across the 48 models, path standard deviation and
-  the size of the miss had a rank correlation of 0.77.
-- **The haircut for picking was too small to matter.** It ranged from 0.0002 (1-day labels) to 0.0032
-  (63-day). Over the four picks, the average miss was 0.0238 without it, 0.0228 with it and 0.0213 for
+- **The paths barely disagree.** The median standard deviation across a model's 7 paths was 0.0024 IC.
+- **So their spread is no forecast range.** The real score fell inside the model's path range for 2 of
+  48 models, and inside path mean ± 2 standard deviations for 3; on average it was 0.0166 below the
+  path mean.
+- **Across label lengths, wider spread came with bigger misses, but not within one.** Over all 48 the
+  rank correlation of path spread with the miss was 0.79, but long labels have both (median spread
+  0.0003 for 1-day labels, 0.0086 for 63-day); within one label length it was −0.73, +0.08, +0.14 and
+  +0.62.
+- **The haircut for picking was too small to matter.** It ranged from 0.0001 (1-day labels) to 0.0031
+  (63-day). Over the four picks, the average miss was 0.0228 without it, 0.0216 with it and 0.0204 for
   walk-forward.
 - **The long-label picks collapsed.** The best 21-day model (ridge, all features) made +0.0085 for real
-  against a forecast of +0.0463; the best 63-day model (LightGBM, 7 leaves) made +0.0054 against
-  +0.0471. The 1-day pick held up (+0.0605 against +0.0587).
+  against a forecast of +0.0459; the best 63-day model (ridge, alpha 100) made +0.0121 against +0.0496.
+  The 1-day pick held up (+0.0605 against +0.0587).
 
 ## Quick start
 
@@ -191,7 +194,7 @@ implementation's `features.parquet` for the match check (`PCV_REF_FEATURES`), ke
 - `src/pcv/synth.py`, `evaluate.py`: synthetic panels with a known edge; daily rank IC and out-of-fold scoring.
 - `src/pcv/reports.py`, `plots.py`, `site.py`: report numbers and charts, chart style, the lab page.
 - Conventions: a row's label covers days day+1 to day+h; rules are chosen on data up to Dec 2022 and
-  checked once on Jan 2023 – Nov 2025; the last 365 days (from 27 Nov 2025) are never read, kept as a sealed holdout.
+  checked once on Jan 2023 – Nov 2025 (training rows keep only labels that end by Dec 2022); the last 365 days (from 27 Nov 2025) are never read, kept as a sealed holdout.
 - Data: NSE daily bhavcopy archive, local only.
 - Charts: every chart is a PNG plus an animated GIF made by `pcv report`.
 
