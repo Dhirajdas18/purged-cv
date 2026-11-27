@@ -314,4 +314,166 @@ def report_features(out_dir: Path) -> dict:
     return res
 
 
-REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features}
+TREND = ["mom_12_1", "mom_6m", "mom_1m", "dist_ma200", "dist_ma50"]
+RISK = ["vol_20", "vol_252", "idio_vol_60", "beta_60", "turnover_rank"]
+CHECK = Path("runs/check.json")  # real 2023 - Nov 2025 scores, computed once
+
+
+def variants() -> list[dict]:
+    """The 48 pre-registered model variants (plan-topic4)."""
+    from pcv.features import FEAT_A, HORIZONS
+
+    out = []
+    for h in HORIZONS:
+        for fs, cols in (("all", FEAT_A), ("trend", TREND), ("risk", RISK)):
+            for model, prm in (("ridge", 1.0), ("ridge", 100.0), ("lightgbm", 7), ("lightgbm", 31)):
+                name = f"h{h} {fs} {model}-{prm:g}"
+                out.append({"name": name, "h": h, "features": cols, "model": model, "param": prm})
+    return out
+
+
+def make_variant(v: dict):
+    from lightgbm import LGBMRegressor
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import make_pipeline
+
+    if v["model"] == "ridge":
+        return lambda: make_pipeline(SimpleImputer(strategy="constant", fill_value=0.0),
+                                     Ridge(alpha=v["param"]))
+    return lambda: LGBMRegressor(**(LGB_PARAMS | {"num_leaves": int(v["param"])}))
+
+
+def _variant_panel(f, v, cal, lo=None, hi=None):
+    import pandas as pd
+
+    from pcv.synth import Panel
+
+    m = f[f"y_{v['h']}"].notna()
+    if lo is not None:
+        m &= f["date"] >= pd.Timestamp(lo)
+    if hi is not None:
+        m &= f["date"] <= pd.Timestamp(hi)
+    g = f[m]
+    return Panel(g[v["features"]].to_numpy(np.float32), g[f"y_{v['h']}"].to_numpy(float),
+                 np.searchsorted(cal, g["date"].to_numpy()), np.zeros(len(g)))
+
+
+def real_scores(f, cal) -> dict:
+    """Each variant trained on every row whose label ends by the last 2022 day, scored on
+    2023-01-01 .. 2025-11-26. Run once; the result is saved and read back afterwards."""
+    from pcv.data import PICK_END
+    from pcv.evaluate import daily_ic
+
+    if CHECK.exists():
+        return json.loads(CHECK.read_text())["real"]
+    last = int(np.searchsorted(cal, np.datetime64(PICK_END), side="right")) - 1
+    real = {}
+    for v in variants():
+        tr = _variant_panel(f, v, cal, hi=PICK_END)
+        keep = tr.day <= last - v["h"]
+        te = _variant_panel(f, v, cal, lo="2023-01-01")
+        m = make_variant(v)().fit(tr.X[keep], tr.y[keep])
+        real[v["name"]] = daily_ic(m.predict(te.X), te.y, te.day)
+    CHECK.parent.mkdir(exist_ok=True)
+    CHECK.write_text(json.dumps({"window": "2023-01-01 to 2025-11-26, trained on labels ending "
+                                           "by 2022-12-30", "real": real}, indent=1) + "\n")
+    return real
+
+
+def report_check(out_dir: Path) -> dict:
+    """Which cross-validation score predicts the real later score, over 48 model variants
+    (pre-registered in plan-topic4): CV on data to Dec 2022, real = Jan 2023 - Nov 2025."""
+    import pandas as pd
+
+    from pcv.data import PICK_END, calendar
+    from pcv.evaluate import ShuffledKFold, cv_score
+    from pcv.split import BlockWalkForward, CombinatorialPurged, PurgedKFold
+
+    f = lake_table()
+    cal = calendar()
+    starts = [int(np.searchsorted(cal, pd.Timestamp(d)))
+              for d in pd.date_range("2016-01-01", PICK_END, freq="6MS")]
+    cache = Path("out/check_cv.json")
+    cv = json.loads(cache.read_text()) if cache.exists() else {}
+    for v in variants():
+        if v["name"] in cv:
+            continue
+        p = _variant_panel(f, v, cal, hi=PICK_END)
+        h, mk = v["h"], make_variant(v)
+        sps = dict(zip(METHODS, [ShuffledKFold(5), PurgedKFold(5), PurgedKFold(5, h),
+                                 PurgedKFold(5, h, h), BlockWalkForward(starts, h, 6),
+                                 CombinatorialPurged(6, 2, h)], strict=True))
+        cv[v["name"]] = {m: cv_score(mk, p, sp, from_day=starts[0]) for m, sp in sps.items()}
+        cache.write_text(json.dumps(cv))
+    real = real_scores(f, cal)
+
+    names = [v["name"] for v in variants()]
+    r = np.array([real[n] for n in names])
+    hz = np.array([v["h"] for v in variants()])
+    res, rows = {"variants": f"{len(names)}; real mean IC {r.mean():+.4f} (range {r.min():+.4f} "
+                             f"to {r.max():+.4f})"}, []
+    base = None
+    for m in METHODS:
+        c = np.array([cv[n][m] for n in names])
+        gap = c - r
+        rho = pd.Series(c).rank().corr(pd.Series(r).rank())
+        pick = []
+        for h in sorted(set(hz)):
+            idx = np.flatnonzero(hz == h)
+            pick.append(r[idx[np.argmax(c[idx])]])
+        row = {"method": m, "gap": float(gap.mean()), "abs_gap": float(np.abs(gap).mean()),
+               "rho": float(rho), "picked_real": float(np.mean(pick)), "cv_mean": float(c.mean())}
+        if m == "purged":
+            base = np.abs(gap)
+        rows.append((row, np.abs(gap)))
+    best_possible = np.mean([r[hz == h].max() for h in sorted(set(hz))])
+    for row, ag in rows:
+        d = ag - base
+        t = d.mean() / (d.std(ddof=1) / np.sqrt(len(d))) if d.std() > 0 else 0.0
+        row["abs_gap_vs_purged_t"] = float(t)
+        res[row["method"]] = (
+            f"mean CV {row['cv_mean']:+.4f}, gap {row['gap']:+.4f}, "
+            f"mean |gap| {row['abs_gap']:.4f} "
+            f"(vs purged: t {t:+.2f}), rank correlation with real {row['rho']:.2f}, real IC of its "
+            f"top pick per horizon {row['picked_real']:+.4f} (best possible {best_possible:+.4f})")
+    rows = [row for row, _ in rows]
+    check_chart(rows, {n: cv[n] for n in names}, real, out_dir)
+    DATA.mkdir(parents=True, exist_ok=True)
+    (DATA / "check.json").write_text(json.dumps({"rows": rows, "cv": cv, "real": real,
+                                                 "best": best_possible}))
+    return res
+
+
+def check_chart(rows, cv, real, out_dir: Path) -> None:
+    """Left: CV vs real for purged 5-fold and shuffled; right: mean |gap| by method."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6), gridspec_kw={"width_ratios": [1.1, 1]})
+    ax = axes[0]
+    names = list(cv)
+    rr = [real[n] for n in names]
+    for m, col in (("shuffled k-fold", plots.MUTED), ("walk-forward", plots.SERIES[2]),
+                   ("purged", plots.SERIES[0])):
+        ax.scatter([cv[n][m] for n in names], rr, s=22, color=col, label=m, alpha=0.85)
+    lo = min(min(rr), min(cv[n][m] for n in names for m in cv[n])) - 0.005
+    hi = max(max(rr), max(cv[n][m] for n in names for m in cv[n])) + 0.005
+    ax.plot([lo, hi], [lo, hi], color=plots.TEXT_2, lw=1, ls="--")
+    ax.set_xlabel("cross-validation IC, 2016-2022")
+    ax.set_ylabel("real IC, Jan 2023 - Nov 2025")
+    ax.set_title("48 models: CV score against the real later score", loc="left")
+    ax.legend(frameon=False, loc="upper left")
+    ax = axes[1]
+    y = np.arange(len(rows))
+    grey = ("shuffled k-fold", "k-fold, no purge")
+    ax.barh(y, [r_["abs_gap"] for r_ in rows], height=0.6,
+            color=[plots.MUTED if r_["method"] in grey else plots.SERIES[0] for r_ in rows])
+    ax.set_yticks(y, [r_["method"] for r_ in rows])
+    ax.invert_yaxis()
+    ax.set_xlabel("mean |CV - real| (IC points)")
+    ax.set_title("Average miss by method", loc="left")
+    ax.grid(axis="y", visible=False)
+    fig.subplots_adjust(wspace=0.45)
+    plots.save(fig, out_dir, "check")
+
+
+REPORTS = {"splits": report_splits, "leak": report_leak, "features": report_features,
+           "check": report_check}
