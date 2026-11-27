@@ -50,3 +50,54 @@ class PurgedKFold:
             test = np.isin(day, block)
             yield (np.flatnonzero(_train_mask(day, block, self.h, self.embargo)),
                    np.flatnonzero(test))
+
+
+class WalkForward:
+    """Train only on the past. The day is cut into `n_splits` blocks; each block after the first is
+    tested on everything before it, ending h + embargo days before the test starts, so the last
+    training label ends before the first test label begins. The reference model's rule (train on dates before
+    day[first test - (h + 5)]) is embargo = 6."""
+
+    def __init__(self, n_splits: int = 5, h: int = 0, embargo: int = 0):
+        self.n_splits, self.h, self.embargo = n_splits, h, embargo
+
+    def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        return self.n_splits - 1
+
+    def split(self, X=None, y=None, groups=None):
+        day = _days(groups)
+        for block in _blocks(day, self.n_splits)[1:]:
+            train = day <= block[0] - self.h - self.embargo
+            yield np.flatnonzero(train), np.flatnonzero(np.isin(day, block))
+
+
+class CombinatorialPurged:
+    """Combinatorial purged CV (Lopez de Prado): the days are cut into `n_groups` blocks and every
+    choice of `k_test` blocks is a test set, purged and embargoed around each block. `paths()` joins
+    the test pieces into full backtest paths."""
+
+    def __init__(self, n_groups: int = 6, k_test: int = 2, h: int = 0, embargo: int = 0):
+        from itertools import combinations
+
+        self.n_groups, self.k_test, self.h, self.embargo = n_groups, k_test, h, embargo
+        self.test_groups = list(combinations(range(n_groups), k_test))
+
+    def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        return len(self.test_groups)
+
+    def split(self, X=None, y=None, groups=None):
+        day = _days(groups)
+        blocks = _blocks(day, self.n_groups)
+        for tg in self.test_groups:
+            train = np.ones(len(day), bool)
+            for g in tg:
+                train &= _train_mask(day, blocks[g], self.h, self.embargo)
+            test = np.isin(day, np.concatenate([blocks[g] for g in tg]))
+            yield np.flatnonzero(train), np.flatnonzero(test)
+
+    def paths(self) -> list[list[int]]:
+        """Each path lists, for every group, the split whose test set supplies that group."""
+        per_group = [[s for s, tg in enumerate(self.test_groups) if g in tg]
+                     for g in range(self.n_groups)]
+        return [[per_group[g][j] for g in range(self.n_groups)]
+                for j in range(len(per_group[0]))]
